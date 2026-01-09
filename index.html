@@ -145,8 +145,7 @@ fetch("https://raw.githubusercontent.com/xTimfie/InnitWeb/main/graph.json")
   const network = new vis.Network(document.getElementById('network'), { nodes:visNodes, edges:visEdges }, {
     nodes:{shape:'dot', scaling:{min:5,max:25}},
     edges:{smooth:{type:'continuous'}},
-    physics: {enabled: true,stabilization: { iterations: 2000 },barnesHut: {gravitationalConstant: -90000,centralGravity: 0.05,springLength: 420,springConstant: 0.04,damping: 0.75,avoidOverlap: 1.5}}
-,
+    physics: {enabled: true,stabilization: { iterations: 2000 },barnesHut: {gravitationalConstant: -90000,centralGravity: 0.05,springLength: 420,springConstant: 0.08,damping: 0.75,avoidOverlap: 1.5}},
     interaction:{selectConnectedEdges:false}
   });
 
