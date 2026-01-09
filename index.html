@@ -71,209 +71,194 @@ html, body { margin:0; padding:0; height:100%; }
   display: none;
 }
 
+</style>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+
+<div id="search-container">
+  <input id="search" placeholder="Search player..." />
+  <div id="toggle-row" class="hidden" style="margin-top:5px; font-size:12px;">
+    Non-mutual
+    <label class="toggle">
+      <input type="checkbox" id="toggle-mutual" checked>
+      <span class="slider"></span>
+    </label>
+    Mutual
+  </div>
+  <div id="mutual-list" class="hidden"><b>Connections:</b></div>
+</div>
+
+<div id="network"></div>
+
 <script>
-fetch("https://raw.githubusercontent.com/xTimfie/InnitWeb/main/graph.json")
+fetch("./final_graph.json")
 .then(r => r.json())
-.then(source => {
+.then(data => {
 
-  /* ----------------------------
-     1. BUILD NODES
-  ----------------------------- */
-  const nodesMap = new Map();
-  source.nodes.forEach(n => {
-    if (n.uuid) {
-      nodesMap.set(n.uuid, {
-        id: n.uuid,
-        label: n.username || n.uuid
-      });
-    }
-  });
 
-  /* ----------------------------
-     2. COLLECT RAW EDGES
-  ----------------------------- */
-  const rawEdges = [];
-  source.edges.forEach(e => {
-    if (e.from_user_id && e.to_user_id) {
-      rawEdges.push({
-        from: e.from_user_id,
-        to: e.to_user_id,
-        weight: Number(e.total_mentions || 1)
-      });
-    }
-  });
+const edgeMap = new Map();
 
-  /* ----------------------------
-     3. MERGE MUTUAL EDGES
-  ----------------------------- */
-  const edgeMap = new Map();
+rawEdges.forEach(e => {
+  const key = [e.from, e.to].sort().join("|");
 
-  rawEdges.forEach(e => {
-    const key = [e.from, e.to].sort().join("|");
+  if (!edgeMap.has(key)) {
+    edgeMap.set(key, {
+      s: e.from < e.to ? e.from : e.to,
+      t: e.from < e.to ? e.to : e.from,
+      w1: 0,
+      w2: 0
+    });
+  }
 
-    if (!edgeMap.has(key)) {
-      edgeMap.set(key, {
-        s: e.from < e.to ? e.from : e.to,
-        t: e.from < e.to ? e.to : e.from,
-        w1: 0,
-        w2: 0
-      });
-    }
+  const entry = edgeMap.get(key);
+  if (e.from === entry.s) entry.w1 += e.weight;
+  else entry.w2 += e.weight;
+});
 
-    const entry = edgeMap.get(key);
-    if (e.from === entry.s) entry.w1 += e.weight;
-    else entry.w2 += e.weight;
-  });
+let mergedEdges = [];
+const connectedIds = new Set();
 
-  let edges = [];
-  const connectedIds = new Set();
-
-  edgeMap.forEach(e => {
-    if (e.w1 + e.w2 > 0) {
-      edges.push({
-        s: e.s,
-        t: e.t,
-        w1: e.w1,
-        w2: e.w2,
-        w: e.w1 + e.w2,
-        mutual: e.w1 > 0 && e.w2 > 0
-      });
-      connectedIds.add(e.s);
-      connectedIds.add(e.t);
-    }
-  });
-
-  /* ----------------------------
-     4. REMOVE ISOLATED NODES
-  ----------------------------- */
-  const nodes = [...nodesMap.values()].filter(n => connectedIds.has(n.id));
-
-  /* ----------------------------
-     5. VIS.JS GRAPH
-  ----------------------------- */
-  const nodeDegrees = {};
-  edges.forEach(e => {
-    nodeDegrees[e.s] = (nodeDegrees[e.s] || 0) + 1;
-    nodeDegrees[e.t] = (nodeDegrees[e.t] || 0) + 1;
-  });
-
-  const visNodes = new vis.DataSet(nodes.map(n => ({
-    id: n.id,
-    label: n.label,
-    font: { face: 'Minecraftia', size: 14, align: 'top' },
-    value: 10
-  })));
-
-  const visEdges = new vis.DataSet(edges.map(e => {
-    const degreeSum = (nodeDegrees[e.s] || 1) + (nodeDegrees[e.t] || 1);
-    return {
-      id: `${e.s}-${e.t}`,
-      from: e.s,
-      to: e.t,
-      width: 1,
-      color: e.mutual ? 'blue' : 'gray',
+edgeMap.forEach(e => {
+  if (e.w1 + e.w2 > 0) {
+    mergedEdges.push({
+      s: e.s,
+      t: e.t,
       w1: e.w1,
       w2: e.w2,
-      mutual: e.mutual,
-      length: 150 + degreeSum * 15
-    };
-  }));
+      w: e.w1 + e.w2,
+      mutual: e.w1 > 0 && e.w2 > 0
+    });
+    connectedIds.add(e.s);
+    connectedIds.add(e.t);
+  }
+});
 
-  const network = new vis.Network(
-    document.getElementById('network'),
-    { nodes: visNodes, edges: visEdges },
-    {
-      nodes: { shape: 'dot', scaling: { min: 5, max: 25 } },
-      edges: { smooth: { type: 'continuous' } },
-      physics: {
-        enabled: true,
-        stabilization: { iterations: 2000 },
-        barnesHut: {
-          gravitationalConstant: -5000,
-          centralGravity: 0.1,
-          springLength: 300,
-          springConstant: 0.05,
-          damping: 0.7,
-          avoidOverlap: 1
-        }
+
+const nodes = [...nodesMap.values()].filter(n => connectedIds.has(n.id));
+
+
+const nodeDegrees = {};
+mergedEdges.forEach(e => {
+  nodeDegrees[e.s] = (nodeDegrees[e.s] || 0) + 1;
+  nodeDegrees[e.t] = (nodeDegrees[e.t] || 0) + 1;
+});
+
+const visNodes = new vis.DataSet(nodes.map(n => ({
+  id: n.id,
+  label: n.label,
+  font: { face: 'Minecraftia', size: 14, align: 'top' },
+  value: 10
+})));
+
+const visEdges = new vis.DataSet(mergedEdges.map(e => {
+  const degreeSum = (nodeDegrees[e.s] || 1) + (nodeDegrees[e.t] || 1);
+  return {
+    id: `${e.s}-${e.t}`,
+    from: e.s,
+    to: e.t,
+    width: 1,
+    color: e.mutual ? 'blue' : 'gray',
+    w1: e.w1,
+    w2: e.w2,
+    mutual: e.mutual,
+    length: 150 + degreeSum * 15
+  };
+}));
+
+  const network = new vis.Network(document.getElementById('network'), { nodes: visNodes, edges: visEdges }, {
+    nodes: { shape: 'dot', scaling: { min: 5, max: 25 } },
+    edges: { smooth: { type: 'continuous' } },
+    physics: {
+      enabled: true,
+      stabilization: { iterations: 2000 },
+      barnesHut: {
+        gravitationalConstant: -5000,
+        centralGravity: 0.1,
+        springLength: 300,
+        springConstant: 0.05,
+        damping: 0.7,
+        avoidOverlap: 1
       }
-    }
-  );
+    },
+    interaction: { selectConnectedEdges: false }
+  });
 
-  network.once('stabilizationIterationsDone', () =>
-    network.setOptions({ physics: false })
-  );
+  network.once('stabilizationIterationsDone', () => network.setOptions({ physics: false }));
 
-  /* ----------------------------
-     6. SEARCH + UI LOGIC
-  ----------------------------- */
   const searchInput = document.getElementById('search');
   const mutualListDiv = document.getElementById("mutual-list");
   const toggle = document.getElementById("toggle-mutual");
   const toggleRow = document.getElementById("toggle-row");
 
+
   const index = {};
-  nodes.forEach(n => index[n.label.toLowerCase()] = n.id);
+  data.nodes.forEach(n => index[n.label.toLowerCase()] = n.id);
 
   let currentNode = null;
+
+  searchInput.addEventListener('input', () => {
+    const id = index[searchInput.value.trim().toLowerCase()];
+    if(id) {
+      currentNode = id;
+      showConnections(id);
+      network.focus(id, { scale: 2, animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+    }
+  });
+
+  toggle.addEventListener('change', () => {
+    if(currentNode) showConnections(currentNode);
+  });
 
   function showConnections(nodeId) {
     toggleRow.classList.remove("hidden");
     mutualListDiv.classList.remove("hidden");
 
     const showMutual = toggle.checked;
-    const connectedEdges = visEdges.get({
+
+    const connectedEdges = edges.get({
       filter: e =>
-        (e.from === nodeId || e.to === nodeId) &&
+        (String(e.from) === String(nodeId) || String(e.to) === String(nodeId)) &&
         e.mutual === showMutual
     });
 
-    if (!connectedEdges.length) {
+    if (connectedEdges.length === 0) {
       mutualListDiv.innerHTML = "<b>Connections:</b><br><i>No connections</i>";
       return;
     }
 
-    const list = connectedEdges.map(e => {
-      const other = e.from === nodeId ? e.to : e.from;
+    const connectionList = connectedEdges.map(e => {
+      const otherId = e.from === nodeId ? e.to : e.from;
       return {
-        label: visNodes.get(other).label,
+        otherLabel: nodes.get(otherId).label,
         weight: e.w1 + e.w2
       };
-    }).sort((a,b) => b.weight - a.weight);
+    });
 
-    mutualListDiv.innerHTML =
-      "<b>Connections:</b><br>" +
-      list.map(c => `<div class="connection-item">${c.label}</div>`).join("");
+    connectionList.sort((a,b) => b.weight - a.weight);
+
+    mutualListDiv.innerHTML = `<b>Connections:</b><br>` +
+      connectionList.map(c => `<div class="connection-item">${c.otherLabel}</div>`).join("");
   }
 
-  searchInput.addEventListener('input', () => {
-    const id = index[searchInput.value.trim().toLowerCase()];
-    if (id) {
-      currentNode = id;
-      showConnections(id);
-      network.focus(id, { scale: 2, animation: true });
-    }
-  });
-
-  toggle.addEventListener('change', () => {
-    if (currentNode) showConnections(currentNode);
-  });
-
-  network.on("selectNode", e => {
-    currentNode = e.nodes[0];
-    searchInput.value = visNodes.get(currentNode).label;
+  network.on("selectNode", params => {
+    currentNode = params.nodes[0];
+    toggleRow.classList.remove("hidden");
+    mutualListDiv.classList.remove("hidden");
+    searchInput.value = nodes.get(currentNode).label;
     showConnections(currentNode);
   });
 
   network.on("deselectNode", () => {
-    currentNode = null;
-    toggleRow.classList.add("hidden");
-    mutualListDiv.classList.add("hidden");
-  });
+  currentNode = null;
+  toggleRow.classList.add("hidden");
+  mutualListDiv.classList.add("hidden");
+  mutualListDiv.innerHTML = "<b>Connections:</b>";
+});
+
 
 });
 </script>
-
 
 </body>
 </html>
