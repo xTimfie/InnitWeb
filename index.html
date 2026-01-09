@@ -143,10 +143,16 @@ fetch("https://raw.githubusercontent.com/xTimfie/InnitWeb/main/graph.json")
 
   // 7. Vis.js DataSets
   const visNodes = new vis.DataSet(nodes.map(n => ({
-    id: n.id, label: n.label,
-    font:{face:'Minecraftia', size:14, align:'top'},
-    value:10
-  })));
+  id: n.id,
+  label: n.label,                     // optional, shows below the image
+  shape: 'circularImage',             // circle avatar
+  image: n.label 
+         ? `https://mc-heads.net/avatar/${n.label}` 
+         : 'https://mc-heads.net/avatar/null', // fallback
+  font: { face: 'Minecraftia', size: 14, align: 'bottom' }, // label style
+  value: 10
+})));
+
 
   const visEdges = new vis.DataSet(mergedEdges.map(e => {
     const degreeSum = (nodeDegrees[e.s]||1)+(nodeDegrees[e.t]||1);
