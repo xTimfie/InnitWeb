@@ -92,173 +92,107 @@ html, body { margin:0; padding:0; height:100%; }
 <div id="network"></div>
 
 <script>
-fetch("./final_graph.json")
+fetch("https://raw.githubusercontent.com/xTimfie/InnitWeb/main/graph.json")
 .then(r => r.json())
 .then(data => {
 
-
-const edgeMap = new Map();
-
-rawEdges.forEach(e => {
-  const key = [e.from, e.to].sort().join("|");
-
-  if (!edgeMap.has(key)) {
-    edgeMap.set(key, {
-      s: e.from < e.to ? e.from : e.to,
-      t: e.from < e.to ? e.to : e.from,
-      w1: 0,
-      w2: 0
-    });
-  }
-
-  const entry = edgeMap.get(key);
-  if (e.from === entry.s) entry.w1 += e.weight;
-  else entry.w2 += e.weight;
-});
-
-let mergedEdges = [];
-const connectedIds = new Set();
-
-edgeMap.forEach(e => {
-  if (e.w1 + e.w2 > 0) {
-    mergedEdges.push({
-      s: e.s,
-      t: e.t,
-      w1: e.w1,
-      w2: e.w2,
-      w: e.w1 + e.w2,
-      mutual: e.w1 > 0 && e.w2 > 0
-    });
-    connectedIds.add(e.s);
-    connectedIds.add(e.t);
-  }
-});
-
-
-const nodes = [...nodesMap.values()].filter(n => connectedIds.has(n.id));
-
-
-const nodeDegrees = {};
-mergedEdges.forEach(e => {
-  nodeDegrees[e.s] = (nodeDegrees[e.s] || 0) + 1;
-  nodeDegrees[e.t] = (nodeDegrees[e.t] || 0) + 1;
-});
-
-const visNodes = new vis.DataSet(nodes.map(n => ({
-  id: n.id,
-  label: n.label,
-  font: { face: 'Minecraftia', size: 14, align: 'top' },
-  value: 10
-})));
-
-const visEdges = new vis.DataSet(mergedEdges.map(e => {
-  const degreeSum = (nodeDegrees[e.s] || 1) + (nodeDegrees[e.t] || 1);
-  return {
-    id: `${e.s}-${e.t}`,
-    from: e.s,
-    to: e.t,
-    width: 1,
-    color: e.mutual ? 'blue' : 'gray',
-    w1: e.w1,
-    w2: e.w2,
-    mutual: e.mutual,
-    length: 150 + degreeSum * 15
-  };
-}));
-
-  const network = new vis.Network(document.getElementById('network'), { nodes: visNodes, edges: visEdges }, {
-    nodes: { shape: 'dot', scaling: { min: 5, max: 25 } },
-    edges: { smooth: { type: 'continuous' } },
-    physics: {
-      enabled: true,
-      stabilization: { iterations: 2000 },
-      barnesHut: {
-        gravitationalConstant: -5000,
-        centralGravity: 0.1,
-        springLength: 300,
-        springConstant: 0.05,
-        damping: 0.7,
-        avoidOverlap: 1
-      }
-    },
-    interaction: { selectConnectedEdges: false }
+  // 1. Build nodes map
+  const nodesMap = new Map();
+  data.nodes.forEach(n => {
+    if (n.uuid) nodesMap.set(n.uuid, { id: n.uuid, label: n.username || n.uuid });
   });
 
-  network.once('stabilizationIterationsDone', () => network.setOptions({ physics: false }));
+  // 2. Build raw edges
+  const rawEdges = [];
+  data.edges.forEach(e => {
+    if (e.from_user_id && e.to_user_id) {
+      rawEdges.push({ from: e.from_user_id, to: e.to_user_id, weight: Number(e.total_mentions || 1) });
+    }
+  });
 
+  // 3. Merge mutual edges
+  const edgeMap = new Map();
+  rawEdges.forEach(e => {
+    const key = [e.from, e.to].sort().join("|");
+    if (!edgeMap.has(key)) edgeMap.set(key, { s: e.from < e.to ? e.from : e.to, t: e.from < e.to ? e.to : e.from, w1:0, w2:0 });
+    const entry = edgeMap.get(key);
+    if (e.from === entry.s) entry.w1 += e.weight;
+    else entry.w2 += e.weight;
+  });
+
+  // 4. Build mergedEdges and connected node IDs
+  const mergedEdges = [];
+  const connectedIds = new Set();
+  edgeMap.forEach(e => {
+    if (e.w1 + e.w2 > 0) {
+      mergedEdges.push({ s:e.s, t:e.t, w1:e.w1, w2:e.w2, w:e.w1+e.w2, mutual:e.w1>0 && e.w2>0 });
+      connectedIds.add(e.s);
+      connectedIds.add(e.t);
+    }
+  });
+
+  // 5. Remove isolated nodes
+  const nodes = [...nodesMap.values()].filter(n => connectedIds.has(n.id));
+
+  // 6. Compute node degrees
+  const nodeDegrees = {};
+  mergedEdges.forEach(e => {
+    nodeDegrees[e.s] = (nodeDegrees[e.s]||0)+1;
+    nodeDegrees[e.t] = (nodeDegrees[e.t]||0)+1;
+  });
+
+  // 7. Vis.js DataSets
+  const visNodes = new vis.DataSet(nodes.map(n => ({
+    id: n.id, label: n.label,
+    font:{face:'Minecraftia', size:14, align:'top'},
+    value:10
+  })));
+
+  const visEdges = new vis.DataSet(mergedEdges.map(e => {
+    const degreeSum = (nodeDegrees[e.s]||1)+(nodeDegrees[e.t]||1);
+    return { id:`${e.s}-${e.t}`, from:e.s, to:e.t, width:1, color:e.mutual?'blue':'gray', w1:e.w1, w2:e.w2, mutual:e.mutual, length:150+degreeSum*15 };
+  }));
+
+  // 8. Create network
+  const network = new vis.Network(document.getElementById('network'), { nodes:visNodes, edges:visEdges }, {
+    nodes:{shape:'dot', scaling:{min:5,max:25}},
+    edges:{smooth:{type:'continuous'}},
+    physics:{enabled:true, stabilization:{iterations:2000}, barnesHut:{gravitationalConstant:-5000, centralGravity:0.1, springLength:300, springConstant:0.05, damping:0.7, avoidOverlap:1}},
+    interaction:{selectConnectedEdges:false}
+  });
+
+  network.once('stabilizationIterationsDone', ()=>network.setOptions({physics:false}));
+
+  // 9. UI logic
   const searchInput = document.getElementById('search');
   const mutualListDiv = document.getElementById("mutual-list");
   const toggle = document.getElementById("toggle-mutual");
   const toggleRow = document.getElementById("toggle-row");
 
-
   const index = {};
-  data.nodes.forEach(n => index[n.label.toLowerCase()] = n.id);
+  nodes.forEach(n => index[n.label.toLowerCase()]=n.id);
 
   let currentNode = null;
 
-  searchInput.addEventListener('input', () => {
-    const id = index[searchInput.value.trim().toLowerCase()];
-    if(id) {
-      currentNode = id;
-      showConnections(id);
-      network.focus(id, { scale: 2, animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
-    }
-  });
-
-  toggle.addEventListener('change', () => {
-    if(currentNode) showConnections(currentNode);
-  });
-
-  function showConnections(nodeId) {
+  function showConnections(nodeId){
     toggleRow.classList.remove("hidden");
     mutualListDiv.classList.remove("hidden");
-
     const showMutual = toggle.checked;
-
-    const connectedEdges = edges.get({
-      filter: e =>
-        (String(e.from) === String(nodeId) || String(e.to) === String(nodeId)) &&
-        e.mutual === showMutual
-    });
-
-    if (connectedEdges.length === 0) {
-      mutualListDiv.innerHTML = "<b>Connections:</b><br><i>No connections</i>";
-      return;
-    }
-
-    const connectionList = connectedEdges.map(e => {
-      const otherId = e.from === nodeId ? e.to : e.from;
-      return {
-        otherLabel: nodes.get(otherId).label,
-        weight: e.w1 + e.w2
-      };
-    });
-
-    connectionList.sort((a,b) => b.weight - a.weight);
-
-    mutualListDiv.innerHTML = `<b>Connections:</b><br>` +
-      connectionList.map(c => `<div class="connection-item">${c.otherLabel}</div>`).join("");
+    const connectedEdges = visEdges.get({ filter: e => (e.from===nodeId||e.to===nodeId)&&e.mutual===showMutual });
+    if(!connectedEdges.length){ mutualListDiv.innerHTML="<b>Connections:</b><br><i>No connections</i>"; return; }
+    const list = connectedEdges.map(e=>{const other=e.from===nodeId?e.to:e.from; return {label:visNodes.get(other).label, weight:e.w1+e.w2}}).sort((a,b)=>b.weight-a.weight);
+    mutualListDiv.innerHTML="<b>Connections:</b><br>"+list.map(c=>`<div class="connection-item">${c.label}</div>`).join("");
   }
 
-  network.on("selectNode", params => {
-    currentNode = params.nodes[0];
-    toggleRow.classList.remove("hidden");
-    mutualListDiv.classList.remove("hidden");
-    searchInput.value = nodes.get(currentNode).label;
-    showConnections(currentNode);
-  });
+  searchInput.addEventListener('input', ()=>{ const id=index[searchInput.value.trim().toLowerCase()]; if(id){currentNode=id; showConnections(id); network.focus(id,{scale:2, animation:{duration:500,easingFunction:'easeInOutQuad'}}); } });
+  toggle.addEventListener('change', ()=>{ if(currentNode) showConnections(currentNode); });
 
-  network.on("deselectNode", () => {
-  currentNode = null;
-  toggleRow.classList.add("hidden");
-  mutualListDiv.classList.add("hidden");
-  mutualListDiv.innerHTML = "<b>Connections:</b>";
-});
-
+  network.on("selectNode", params=>{ currentNode=params.nodes[0]; searchInput.value=visNodes.get(currentNode).label; showConnections(currentNode); toggleRow.classList.remove("hidden"); mutualListDiv.classList.remove("hidden"); });
+  network.on("deselectNode", ()=>{ currentNode=null; toggleRow.classList.add("hidden"); mutualListDiv.classList.add("hidden"); });
 
 });
 </script>
+
 
 </body>
 </html>
