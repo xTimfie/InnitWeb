@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>InnitNet</title>
 <link rel="icon" href="https://minecraft.wiki/images/Invicon_Cobweb.png?cb28b" type="image/png">
+
 <style>
 @font-face {
     font-family: 'Minecraftia';
@@ -46,6 +47,41 @@ html, body { margin:0; padding:0; height:100%; }
   background: #e0e0e0;
 }
 
+#loading-overlay {
+  position: fixed;       /* fixed so it covers the viewport */
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.8); /* semi-transparent black */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;         /* very high so it’s above everything else */
+  font-family: monospace;
+}
+
+#loading-text {
+  color: white;
+  font-size: 32px;
+  font-weight: bold;
+  text-align: center;
+}
+
+#loading-text::after {
+  content: "";
+  display: block;
+  width: 40px; height: 40px;
+  border: 5px solid white;
+  border-top: 5px solid transparent;
+  border-radius: 50%;
+  margin: 20px auto 0;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 .connection-item { margin-bottom:3px; }
 
 .hidden {
@@ -57,6 +93,10 @@ html, body { margin:0; padding:0; height:100%; }
 
 </head>
 <body>
+
+<div id="loading-overlay">
+  <div id="loading-text">loading</div>
+</div>
 
 <div id="search-container">
   <button id="toggle-gray" style="margin-bottom:6px; width:100%; cursor:pointer;">
@@ -78,6 +118,10 @@ html, body { margin:0; padding:0; height:100%; }
 fetch("https://raw.githubusercontent.com/xTimfie/InnitWeb/main/graph.json")
 .then(r => r.json())
 .then(data => {
+
+  
+  const overlay = document.getElementById("loading-overlay");
+
 
   // 1. Build nodes map
   const nodesMap = new Map();
@@ -146,11 +190,21 @@ fetch("https://raw.githubusercontent.com/xTimfie/InnitWeb/main/graph.json")
   const network = new vis.Network(document.getElementById('network'), { nodes:visNodes, edges:visEdges }, {
     nodes:{shape:'dot', scaling:{min:5,max:25}},
     edges:{smooth:{type:'continuous'}},
-    physics: {enabled: true,stabilization: { iterations: 2000 },barnesHut: {gravitationalConstant: -90000,centralGravity: 0.05,springLength: 420,springConstant: 0.08,damping: 0.75,avoidOverlap: 1.5}},
+    physics: {enabled: true,stabilization: { iterations: 2000 },barnesHut: {gravitationalConstant: -90000,centralGravity: 0.05,springLength: 420,springConstant: 0.08,damping: 0.75,avoidOverlap: 1.5}}
+,
     interaction:{selectConnectedEdges:false}
   });
 
-  //network.once('stabilizationIterationsDone', ()=>network.setOptions({physics:false}));
+
+  
+
+  network.once("afterDrawing", () => {
+  overlay.style.transition = "opacity 0.5s";
+  overlay.style.opacity = 0;
+  setTimeout(() => overlay.style.display = 'none', 500);
+});
+
+
 
   // 9. UI logic
   const searchInput = document.getElementById('search');
