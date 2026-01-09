@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Player Social Graph</title>
+<style>
+@font-face {
+    font-family: 'Minecraftia';
+    src: url('https://fontlibrary.org/assets/fonts/minecraftia/minecraftia-webfont.woff2') format('woff2'),
+         url('https://fontlibrary.org/assets/fonts/minecraftia/minecraftia-webfont.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+* {
+    font-family: 'Minecraftia', monospace !important;
+}
+
+html, body { margin:0; padding:0; height:100%; }
+#search-container {
+  position:absolute; top:10px; left:10px; z-index:10;
+  background:white; padding:10px; border-radius:6px;
+  width:250px;
+}
+#search {
+  width:90%; padding:5% 5%;
+}
+#mutual-list {
+  margin-top:5px;
+  max-height:300px;
+  overflow-y:auto;
+  font-size:14px;
+  padding-top:5px;
+}
+#network { width:100%; height:100%; }
+.connection-item { margin-bottom:3px; }
+
+/* Toggle switch */
+.toggle {
+  position: relative;
+  width: 40px;
+  height: 20px;
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 8px;
+}
+.toggle input { display:none; }
+.slider {
+  position:absolute;
+  cursor:pointer;
+  top:0; left:0; right:0; bottom:0;
+  background:#ccc;
+  border-radius:999px;
+  transition:0.25s;
+}
+.slider:before {
+  content:"";
+  position:absolute;
+  height:16px; width:16px;
+  left:2px; bottom:2px;
+  background:white;
+  border-radius:50%;
+  transition:0.25s;
+}
+.toggle input:checked + .slider {
+  background:#4CAF50;
+}
+.toggle input:checked + .slider:before {
+  transform:translateX(20px);
+}
+.hidden {
+  display: none;
+}
+
+</style>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+
+<div id="search-container">
+  <input id="search" placeholder="Search player..." />
+  <div id="toggle-row" class="hidden" style="margin-top:5px; font-size:12px;">
+    Non-mutual
+    <label class="toggle">
+      <input type="checkbox" id="toggle-mutual" checked>
+      <span class="slider"></span>
+    </label>
+    Mutual
+  </div>
+  <div id="mutual-list" class="hidden"><b>Connections:</b></div>
+</div>
+
+<div id="network"></div>
+
+<script>
+fetch("https://xTimfie.github.io/InnitWeb/final_graph.json")
+.then(r => r.json())
+.then(data => {
+
+  const nodeDegrees = {};
+  data.edges.forEach(e => {
+    nodeDegrees[e.s] = (nodeDegrees[e.s] || 0) + 1;
+    nodeDegrees[e.t] = (nodeDegrees[e.t] || 0) + 1;
+  });
+
+  const nodes = new vis.DataSet(data.nodes.map(n => ({
+    id: n.id,
+    label: n.label,
+    font: { face: 'Minecraftia', size: 14, align: 'top', strokeWidth: 0 },
+    value: 10
+  })));
+
+  const edges = new vis.DataSet(data.edges.map(e => {
+    const degreeSum = (nodeDegrees[e.s] || 1) + (nodeDegrees[e.t] || 1);
+    return {
+      id: `${e.s}-${e.t}`,
+      from: e.s,
+      to: e.t,
+      width: 1,
+      color: e.mutual ? 'blue' : 'gray',
+      w1: e.w1,
+      w2: e.w2,
+      mutual: e.mutual,
+      length: 150 + degreeSum * 15
+    };
+  }));
+
+  const network = new vis.Network(document.getElementById('network'), { nodes, edges }, {
+    nodes: { shape: 'dot', scaling: { min: 5, max: 25 } },
+    edges: { smooth: { type: 'continuous' } },
+    physics: {
+      enabled: true,
+      stabilization: { iterations: 2000 },
+      barnesHut: {
+        gravitationalConstant: -5000,
+        centralGravity: 0.1,
+        springLength: 300,
+        springConstant: 0.05,
+        damping: 0.7,
+        avoidOverlap: 1
+      }
+    },
+    interaction: { selectConnectedEdges: false }
+  });
+
+  network.once('stabilizationIterationsDone', () => network.setOptions({ physics: false }));
+
+  const searchInput = document.getElementById('search');
+  const mutualListDiv = document.getElementById("mutual-list");
+  const toggle = document.getElementById("toggle-mutual");
+  const toggleRow = document.getElementById("toggle-row");
+
+
+  const index = {};
+  data.nodes.forEach(n => index[n.label.toLowerCase()] = n.id);
+
+  let currentNode = null;
+
+  searchInput.addEventListener('input', () => {
+    const id = index[searchInput.value.trim().toLowerCase()];
+    if(id) {
+      currentNode = id;
+      showConnections(id);
+      network.focus(id, { scale: 2, animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+    }
+  });
+
+  toggle.addEventListener('change', () => {
+    if(currentNode) showConnections(currentNode);
+  });
+
+  function showConnections(nodeId) {
+    toggleRow.classList.remove("hidden");
+    mutualListDiv.classList.remove("hidden");
+
+    const showMutual = toggle.checked;
+
+    const connectedEdges = edges.get({
+      filter: e =>
+        (String(e.from) === String(nodeId) || String(e.to) === String(nodeId)) &&
+        e.mutual === showMutual
+    });
+
+    if (connectedEdges.length === 0) {
+      mutualListDiv.innerHTML = "<b>Connections:</b><br><i>No connections</i>";
+      return;
+    }
+
+    const connectionList = connectedEdges.map(e => {
+      const otherId = e.from === nodeId ? e.to : e.from;
+      return {
+        otherLabel: nodes.get(otherId).label,
+        weight: e.w1 + e.w2
+      };
+    });
+
+    connectionList.sort((a,b) => b.weight - a.weight);
+
+    mutualListDiv.innerHTML = `<b>Connections:</b><br>` +
+      connectionList.map(c => `<div class="connection-item">${c.otherLabel}</div>`).join("");
+  }
+
+  network.on("selectNode", params => {
+    currentNode = params.nodes[0];
+    toggleRow.classList.remove("hidden");
+    mutualListDiv.classList.remove("hidden");
+    searchInput.value = nodes.get(currentNode).label;
+    showConnections(currentNode);
+  });
+
+  network.on("deselectNode", () => {
+  currentNode = null;
+  toggleRow.classList.add("hidden");
+  mutualListDiv.classList.add("hidden");
+  mutualListDiv.innerHTML = "<b>Connections:</b>";
+});
+
+
+});
+</script>
+
+</body>
+</html>
