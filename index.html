@@ -13,84 +13,51 @@
     font-weight: normal;
     font-style: normal;
 }
-* {
-    font-family: 'Minecraftia', monospace !important;
-}
+* { font-family: 'Minecraftia', monospace !important; }
 
 html, body { margin:0; padding:0; height:100%; }
+
 #search-container {
   position:absolute; top:10px; left:10px; z-index:10;
   background:white; padding:10px; border-radius:6px;
   width:250px;
 }
-#search {
-  width:90%; padding:5% 5%;
-}
-#mutual-list {
-  margin-top:5px;
-  max-height:300px;
-  overflow-y:auto;
-  font-size:14px;
-  padding-top:5px;
-}
+#search { width:90%; padding:5% 5%; }
+#mutual-list { margin-top:5px; max-height:300px; overflow-y:auto; font-size:14px; padding-top:5px; }
 #network { width:100%; height:100%; }
 
 #toggle-gray {
-  
-  padding: 6px;
-  border-radius: 4px;
-  border: 1px solid #aaa;
-  background: #f0f0f0;
-  font-size: 12px;
+  padding: 6px; border-radius: 4px; border: 1px solid #aaa; background: #f0f0f0; font-size: 12px;
 }
-#toggle-gray:hover {
-  background: #e0e0e0;
+#toggle-gray:hover { background: #e0e0e0; }
+
+#status-bar {
+    position: fixed; bottom: 0; left: 0; width: 100%; background: #f0f0f0; color: black;
+    font-family: monospace; font-size: 14px; display: flex; justify-content: space-between;
+    align-items: center; padding: 6px 12px; z-index: 20;
 }
+
 
 #loading-overlay {
-  position: fixed;       /* fixed so it covers the viewport */
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  background: rgba(0,0,0,0.8); /* semi-transparent black */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;         /* very high so it’s above everything else */
-  font-family: monospace;
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center;
+  z-index: 9999; font-family: monospace;
 }
-
 #loading-text {
-  color: white;
-  font-size: 32px;
-  font-weight: bold;
-  text-align: center;
+  color: white; font-size: 32px; font-weight: bold; text-align: center;
 }
-
 #loading-text::after {
-  content: "";
-  display: block;
-  width: 40px; height: 40px;
-  border: 5px solid white;
-  border-top: 5px solid transparent;
-  border-radius: 50%;
-  margin: 20px auto 0;
+  content: ""; display: block; width: 40px; height: 40px; border: 5px solid white;
+  border-top: 5px solid transparent; border-radius: 50%; margin: 20px auto 0;
   animation: spin 1s linear infinite;
 }
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
 .connection-item { margin-bottom:3px; }
-
-.hidden {
-  display: none;
-}
-
+.hidden { display: none; }
 </style>
-<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 </head>
 <body>
 
@@ -102,9 +69,7 @@ html, body { margin:0; padding:0; height:100%; }
   <button id="toggle-gray" style="margin-bottom:6px; width:100%; cursor:pointer;">
     Hide non-mutual connections
   </button>
-
   <input id="search" placeholder="Search player..." />
-
   <div id="connection-lists" class="hidden">
     <div id="mutual-section"><b>Mutual Connections:</b></div>
     <div id="nonmutual-section" style="margin-top:6px;"><b>Non-Mutual Connections:</b></div>
@@ -113,29 +78,47 @@ html, body { margin:0; padding:0; height:100%; }
 
 <div id="network"></div>
 
-<script>
+<!-- Status bar with Show all players toggle -->
+<div id="status-bar">
+  <div id="status-text">Players: 0 | Connections: 0</div>
+  <label style="display:flex; align-items:center; cursor:pointer; margin-right:18px;">
+    <input type="checkbox" id="show-all-players" style="margin-right:6px;" /> Show all players
+  </label>
+</div>
 
+<script>
 fetch("https://raw.githubusercontent.com/xTimfie/InnitWeb/main/graph.json")
 .then(r => r.json())
 .then(data => {
 
-  
   const overlay = document.getElementById("loading-overlay");
+  const statusText = document.getElementById("status-text");
+  const showAllCheckbox = document.getElementById("show-all-players");
 
+  // Check URL for all nodes
+const urlParams = new URLSearchParams(window.location.search);
+let showAll = urlParams.get("all") === "1";
+showAllCheckbox.checked = showAll; // <-- only set to true if URL has all=1
+
+
+  // Toggle reload to show all or only connected nodes
+  showAllCheckbox.addEventListener("change", () => {
+    const newUrl = new URL(window.location.href);
+    if (showAllCheckbox.checked) {
+      newUrl.searchParams.set("all", "1");
+    } else {
+      newUrl.searchParams.delete("all");
+    }
+    window.location.href = newUrl.toString();
+  });
 
   // 1. Build nodes map
   const nodesMap = new Map();
-  data.nodes.forEach(n => {
-    if (n.uuid) nodesMap.set(n.uuid, { id: n.uuid, label: n.username || n.uuid });
-  });
+  data.nodes.forEach(n => { if (n.uuid) nodesMap.set(n.uuid, { id: n.uuid, label: n.username || n.uuid }); });
 
   // 2. Build raw edges
   const rawEdges = [];
-  data.edges.forEach(e => {
-    if (e.from_user_id && e.to_user_id) {
-      rawEdges.push({ from: e.from_user_id, to: e.to_user_id, weight: Number(e.total_mentions || 1) });
-    }
-  });
+  data.edges.forEach(e => { if (e.from_user_id && e.to_user_id) rawEdges.push({ from: e.from_user_id, to: e.to_user_id, weight: Number(e.total_mentions || 1) }); });
 
   // 3. Merge mutual edges
   const edgeMap = new Map();
@@ -143,8 +126,7 @@ fetch("https://raw.githubusercontent.com/xTimfie/InnitWeb/main/graph.json")
     const key = [e.from, e.to].sort().join("|");
     if (!edgeMap.has(key)) edgeMap.set(key, { s: e.from < e.to ? e.from : e.to, t: e.from < e.to ? e.to : e.from, w1:0, w2:0 });
     const entry = edgeMap.get(key);
-    if (e.from === entry.s) entry.w1 += e.weight;
-    else entry.w2 += e.weight;
+    if (e.from === entry.s) entry.w1 += e.weight; else entry.w2 += e.weight;
   });
 
   // 4. Build mergedEdges and connected node IDs
@@ -153,158 +135,109 @@ fetch("https://raw.githubusercontent.com/xTimfie/InnitWeb/main/graph.json")
   edgeMap.forEach(e => {
     if (e.w1 + e.w2 > 0) {
       mergedEdges.push({ s:e.s, t:e.t, w1:e.w1, w2:e.w2, w:e.w1+e.w2, mutual:e.w1>0 && e.w2>0 });
-      connectedIds.add(e.s);
-      connectedIds.add(e.t);
+      connectedIds.add(e.s); connectedIds.add(e.t);
     }
   });
 
-  // 5. Remove isolated nodes
-  const nodes = [...nodesMap.values()].filter(n => connectedIds.has(n.id));
+  // 5. Filter nodes based on showAll
+  const nodes = showAll ? [...nodesMap.values()] : [...nodesMap.values()].filter(n => connectedIds.has(n.id));
 
   // 6. Compute node degrees
   const nodeDegrees = {};
-  mergedEdges.forEach(e => {
-    nodeDegrees[e.s] = (nodeDegrees[e.s]||0)+1;
-    nodeDegrees[e.t] = (nodeDegrees[e.t]||0)+1;
-  });
+  mergedEdges.forEach(e => { nodeDegrees[e.s]=(nodeDegrees[e.s]||0)+1; nodeDegrees[e.t]=(nodeDegrees[e.t]||0)+1; });
 
   // 7. Vis.js DataSets
   const visNodes = new vis.DataSet(nodes.map(n => ({
-  id: n.id,
-  label: n.label,                     // optional, shows below the image
-  shape: 'circularImage',             // circle avatar
-  image: n.label
-         ? `https://mc-heads.net/avatar/${n.label}`
-         : 'https://mc-heads.net/avatar/null', // fallback
-  font: { face: 'Minecraftia', size: 14, align: 'bottom' }, // label style
-  value: 10
-})));
+    id: n.id,
+    label: n.label,
+    shape: 'circularImage',
+    image: n.label ? `https://mc-heads.net/avatar/${n.label}` : 'https://mc-heads.net/avatar/null',
+    font: { face: 'Minecraftia', size: 14, align: 'bottom' },
+    value: 10
+  })));
 
+  function interpolateColor(fraction, minColor, maxColor) {
+    fraction = Math.max(0, Math.min(1, fraction));
+    const r = Math.round(minColor[0] + fraction * (maxColor[0]-minColor[0]));
+    const g = Math.round(minColor[1] + fraction * (maxColor[1]-minColor[1]));
+    const b = Math.round(minColor[2] + fraction * (maxColor[2]-minColor[2]));
+    return `rgb(${r},${g},${b})`;
+  }
+
+  const EDGE_COLOR_CONFIG = { minColor: [102,178,255], maxColor: [255,165,0], maxMentions: 100 };
 
   const visEdges = new vis.DataSet(mergedEdges.map(e => {
     const degreeSum = (nodeDegrees[e.s]||1)+(nodeDegrees[e.t]||1);
-    return { id:`${e.s}-${e.t}`, from:e.s, to:e.t, width:1, color:e.mutual?'blue':'gray', w1:e.w1, w2:e.w2, mutual:e.mutual, length:150+degreeSum*15 };
+    let color = e.mutual ? interpolateColor(Math.min(1, Math.sqrt((e.w1*e.w2)/(EDGE_COLOR_CONFIG.maxMentions**2))), EDGE_COLOR_CONFIG.minColor, EDGE_COLOR_CONFIG.maxColor) : "rgb(192,192,192)";
+    return { id:`${e.s}-${e.t}`, from:e.s, to:e.t, width:1, color, w1:e.w1, w2:e.w2, mutual:e.mutual, length:150+degreeSum*15 };
   }));
 
   // 8. Create network
   const network = new vis.Network(document.getElementById('network'), { nodes:visNodes, edges:visEdges }, {
     nodes:{shape:'dot', scaling:{min:5,max:25}},
     edges:{smooth:{type:'continuous'}},
-    physics: {enabled: true,stabilization: { iterations: 2000 },barnesHut: {gravitationalConstant: -90000,centralGravity: 0.05,springLength: 420,springConstant: 0.08,damping: 0.75,avoidOverlap: 1.5}}
-,
+    physics:{enabled:true, stabilization:{iterations:2000}, barnesHut:{gravitationalConstant:-90000, centralGravity:0.05, springLength:420, springConstant:0.08, damping:0.75, avoidOverlap:1.5}},
     interaction:{selectConnectedEdges:false}
   });
 
-
-  
-
+  // Hide loading overlay after first draw
   network.once("afterDrawing", () => {
-  overlay.style.transition = "opacity 0.5s";
-  overlay.style.opacity = 0;
-  setTimeout(() => overlay.style.display = 'none', 500);
-});
-
-
+    overlay.style.transition="opacity 0.5s"; overlay.style.opacity=0;
+    setTimeout(()=>overlay.style.display='none',500);
+  });
 
   // 9. UI logic
   const searchInput = document.getElementById('search');
-
-  const index = {};
-  nodes.forEach(n => index[n.label.toLowerCase()]=n.id);
-
+  const mutualDiv = document.getElementById("mutual-section");
+  const nonMutualDiv = document.getElementById("nonmutual-section");
+  const connectionLists = document.getElementById("connection-lists");
+  const toggleGrayBtn = document.getElementById("toggle-gray");
+  let grayVisible = true;
   let currentNode = null;
 
-  const toggleGrayBtn = document.getElementById("toggle-gray");
-let grayVisible = true;
+  const index = {};
+  nodes.forEach(n=>index[n.label.toLowerCase()]=n.id);
 
-
-
-toggleGrayBtn.addEventListener("click", () => {
-  grayVisible = !grayVisible;
-
-  const updates = visEdges.get().map(e => {
-    if (!e.mutual) {
-      return {
-        id: e.id,
-        hidden: !grayVisible,
-        physics: grayVisible
-      };
-    }
-    return null;
-  }).filter(Boolean);
-
-  visEdges.update(updates);
-
-  toggleGrayBtn.textContent = grayVisible
-    ? "Hide non-mutual connections"
-    : "Show non-mutual connections";
-
-  // Let the solver relax after force changes
-  network.stabilize(400);
-
-  if (currentNode) showConnections(currentNode);
-});
-
-
-
-
-
-  const mutualDiv = document.getElementById("mutual-section");
-const nonMutualDiv = document.getElementById("nonmutual-section");
-const connectionLists = document.getElementById("connection-lists");
-
-function renderSection(div, title, edges, nodeId) {
-  if (!edges.length) {
-    div.innerHTML = `<b>${title}</b><br><i>No connections</i>`;
-    return;
+  function renderSection(div, title, edges, nodeId){
+    if(!edges.length){ div.innerHTML=`<b>${title}</b><br><i>No connections</i>`; return; }
+    const list = edges.map(e=>{ const other=e.from===nodeId?e.to:e.from; return { label: visNodes.get(other).label, weight:e.w1+e.w2 }; })
+                     .sort((a,b)=>b.weight-a.weight);
+    div.innerHTML=`<b>${title}</b><br>`+list.map(c=>`<div class="connection-item">${c.label}</div>`).join("");
   }
 
-  const list = edges.map(e => {
-    const other = e.from === nodeId ? e.to : e.from;
-    return { label: visNodes.get(other).label, weight: e.w1 + e.w2 };
-  }).sort((a, b) => b.weight - a.weight);
-
-  div.innerHTML = `<b>${title}</b><br>` + list
-    .map(c => `<div class="connection-item">${c.label}</div>`)
-    .join("");
-}
-
-function showConnections(nodeId) {
-  connectionLists.classList.remove("hidden");
-
-  const edges = visEdges.get({ filter: e => e.from === nodeId || e.to === nodeId });
-
-  const mutual = edges.filter(e => e.mutual);
-  const nonmutual = edges.filter(e => !e.mutual);
-
-  renderSection(mutualDiv, "Mutual Connections:", mutual, nodeId);
-
-  if (grayVisible) {
-    nonMutualDiv.classList.remove("hidden");
-    renderSection(nonMutualDiv, "Non-Mutual Connections:", nonmutual, nodeId);
-  } else {
-    nonMutualDiv.classList.add("hidden");
+  function showConnections(nodeId){
+    connectionLists.classList.remove("hidden");
+    const edges = visEdges.get({ filter: e => e.from===nodeId || e.to===nodeId });
+    renderSection(mutualDiv,"Mutual Connections:", edges.filter(e=>e.mutual), nodeId);
+    if(grayVisible){ nonMutualDiv.classList.remove("hidden"); renderSection(nonMutualDiv,"Non-Mutual Connections:", edges.filter(e=>!e.mutual), nodeId);}
+    else nonMutualDiv.classList.add("hidden");
   }
-}
 
+  searchInput.addEventListener('input',()=>{ const id=index[searchInput.value.trim().toLowerCase()]; if(id){currentNode=id; showConnections(id); network.focus(id,{scale:3,animation:{duration:500,easingFunction:'easeInOutQuad'}}); } });
 
-  searchInput.addEventListener('input', ()=>{ const id=index[searchInput.value.trim().toLowerCase()]; if(id){currentNode=id; showConnections(id); network.focus(id,{scale:3, animation:{duration:500,easingFunction:'easeInOutQuad'}}); } });
+  network.on("selectNode", params => { currentNode=params.nodes[0]; searchInput.value=visNodes.get(currentNode).label; showConnections(currentNode); });
+  network.on("deselectNode", ()=>{ currentNode=null; connectionLists.classList.add("hidden"); });
 
-  network.on("selectNode", params => {
-  currentNode = params.nodes[0];
-  searchInput.value = visNodes.get(currentNode).label;
-  showConnections(currentNode);
-});
+  toggleGrayBtn.addEventListener("click",()=>{
+    grayVisible=!grayVisible;
+    const updates = visEdges.get().map(e=>!e.mutual?{id:e.id, hidden:!grayVisible, physics:grayVisible}:null).filter(Boolean);
+    visEdges.update(updates);
+    toggleGrayBtn.textContent = grayVisible ? "Hide non-mutual connections" : "Show non-mutual connections";
+    network.stabilize(400);
+    if(currentNode) showConnections(currentNode);
+    updateStatus();
+  });
 
-network.on("deselectNode", () => {
-  currentNode = null;
-  connectionLists.classList.add("hidden");
-});
+  function updateStatus(){
+    const visibleNodes = visNodes.get().length;
+    const visibleEdges = visEdges.get({filter:e=>!e.hidden}).length;
+    statusText.textContent=`Players: ${visibleNodes} | Connections: ${visibleEdges}`;
+  }
 
-
+  // Initial status update
+  updateStatus();
 });
 </script>
-
 
 </body>
 </html>
