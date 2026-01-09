@@ -288,7 +288,7 @@ function showConnections(nodeId) {
 }
 
 
-  searchInput.addEventListener('input', ()=>{ const id=index[searchInput.value.trim().toLowerCase()]; if(id){currentNode=id; showConnections(id); network.focus(id,{scale:2, animation:{duration:500,easingFunction:'easeInOutQuad'}}); } });
+  searchInput.addEventListener('input', ()=>{ const id=index[searchInput.value.trim().toLowerCase()]; if(id){currentNode=id; showConnections(id); network.focus(id,{scale:3, animation:{duration:500,easingFunction:'easeInOutQuad'}}); } });
 
   network.on("selectNode", params => {
   currentNode = params.nodes[0];
