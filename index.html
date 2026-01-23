@@ -6,6 +6,7 @@
 <link rel="icon" href="https://minecraft.wiki/images/Invicon_Cobweb.png?cb28b" type="image/png">
 
 <style>
+/* Fonts */
 @font-face {
     font-family: 'Minecraftia';
     src: url('https://fontlibrary.org/assets/fonts/minecraftia/minecraftia-webfont.woff2') format('woff2'),
@@ -15,66 +16,178 @@
 }
 * { font-family: 'Minecraftia', monospace !important; }
 
-html, body { margin:0; padding:0; height:100%; }
+/* Reset body/html */
+html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; }
 
-#search-container {
-  position:absolute; top:10px; left:10px; z-index:10;
-  background:white; padding:10px; border-radius:6px;
-  width:250px;
+/* Loading overlay */
+#loading-overlay {
+    position: fixed; width:80%; height:100%;  left: 20.6%; bottom: 31px;
+    background: #1E1E1E; display: flex; justify-content: center; align-items: center;
+    z-index: 9999; font-family: monospace;
 }
-#search { width:90%; padding:5% 5%; }
-#mutual-list { margin-top:5px; max-height:300px; overflow-y:auto; font-size:14px; padding-top:5px; }
-#network { width:100%; height:100%; }
-
-#toggle-gray {
-  padding: 6px; border-radius: 4px; border: 1px solid #aaa; background: #f0f0f0; font-size: 12px;
+#loading-text {
+    color: white; font-size: 32px; font-weight: bold; text-align: center;
 }
-#toggle-gray:hover { background: #e0e0e0; }
 
+
+/* Left panel */
+#left-panel {
+    position:absolute; z-index:10;
+    background:#1E1E1E;
+    width:20%; height:99%;
+    border-right: 1px solid #555; 
+    border-bottom: 1px solid #555;
+}
+
+/* Top buttons container */
+#top-buttons {
+    display: flex;
+    justify-content: space-around;
+    margin: 10px 0 20px 0;
+    padding: 0 5px;
+}
+
+.top-btn {
+    width: 45px;
+    height: 45px;
+    background-color: #333;
+    color: #FFF;
+    border: 1px solid #555;
+    border-radius: 4px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+}
+
+.top-btn:hover {
+    background-color: #555;
+    transform: scale(1.05);
+}
+
+/* Search box */
+#search {
+    width: 90%;
+    height: 32px;
+    background: #333333;
+    color: #FFFFFF;
+    font-size: 16px;
+    margin-top: 1%;
+    margin-left:4%;
+    border: 1px solid #555;
+    border-radius: 4px;
+}
+#search:focus {
+    background: #333333;
+    color: #FFFFFF;
+    outline: none;
+    border-color: #777;
+    box-shadow: 0 0 5px #555 inset;
+}
+
+/* Connection lists container */
+#connection-lists {
+    margin-left: 0;
+    margin-right: 0;
+    margin-top: 16px;
+    height: 100%;
+    overflow-y: auto;
+    font-size:14px;
+    color: #FFFFFF;
+    padding-right: 5px;
+}
+
+/* Scrollbars */
+#connection-lists {
+    height: 78%;
+    overflow-y: auto;
+    scrollbar-width: thin; 
+    scrollbar-color: #555 #222; /* thumb / track */
+}
+#connection-lists::-webkit-scrollbar { width: 10px; }
+#connection-lists::-webkit-scrollbar-track { background: #222; }
+#connection-lists::-webkit-scrollbar-thumb { background: #555; border-radius: 5px; }
+#connection-lists::-webkit-scrollbar-thumb:hover { background: #777; }
+
+/* Connection items */
+.connection-item {
+    margin-bottom:4px;
+    padding: 2px 4px;
+    color: #CCCCCC;
+    border-radius: 3px;
+    transition: background 0.2s;
+    padding-left: 5%;
+}
+.connection-item:hover {
+    background-color: #444;
+    cursor: pointer;
+}
+
+#profile-viewer {
+  margin-top: 16px;
+  height: 78%;
+  overflow-y: auto;
+  font-size: 14px;
+  color: white;
+  padding-right: 5px;
+}
+
+    #skin-viewer *{ background-image: "image-preview"; }
+
+/* Network container */
+#network {
+    width:80%; height:100%;  margin-left: 20%;
+}
+
+/* Status bar */
 #status-bar {
-    position: fixed; bottom: 0; left: 0; width: 100%; background: #f0f0f0; color: black;
-    font-family: monospace; font-size: 14px; display: flex; justify-content: space-between;
+    position: fixed; bottom: 0; left: 0; width: 100%; 
+    background: #333333; color: #FFFFFF;
+    font-family: monospace; font-size: 14px; 
+    display: flex; justify-content: space-between;
     align-items: center; padding: 6px 12px; z-index: 20;
 }
 
+/* Headline styles */
+.headline{
+    font-size:16px; 
+    margin-bottom: 8px;
+    color: #569CD6;
+    padding-left: 5%;
+}
 
-#loading-overlay {
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center;
-  z-index: 9999; font-family: monospace;
-}
-#loading-text {
-  color: white; font-size: 32px; font-weight: bold; text-align: center;
-}
-#loading-text::after {
-  content: ""; display: block; width: 40px; height: 40px; border: 5px solid white;
-  border-top: 5px solid transparent; border-radius: 50%; margin: 20px auto 0;
-  animation: spin 1s linear infinite;
-}
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-.connection-item { margin-bottom:3px; }
 .hidden { display: none; }
 </style>
 
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<link rel="stylesheet" href="https://raw.githack.com/xTimfie/Skin-Editor/main/code/css/minecraft-skinviewer.css">
+
 </head>
 <body>
 
 <div id="loading-overlay">
-  <div id="loading-text">loading</div>
+  <div id="loading-text">loading...</div>
 </div>
 
-<div id="search-container">
-  <button id="toggle-gray" style="margin-bottom:6px; width:100%; cursor:pointer;">
-    Hide non-mutual connections
-  </button>
+<div id="left-panel">
+
+  <div id="top-buttons">
+    <button class="top-btn"></button>
+    <button class="top-btn" id="toggle-gray">→</button>
+    <button class="top-btn"></button>
+    <button class="top-btn"></button>
+    <button class="top-btn"></button>
+  </div>
+
   <input id="search" placeholder="Search player..." />
   <div id="connection-lists" class="hidden">
-    <div id="mutual-section"><b>Mutual Connections:</b></div>
-    <div id="nonmutual-section" style="margin-top:6px;"><b>Non-Mutual Connections:</b></div>
+    <div id="mutual-section" class="headline"><h1>Mutual Connections:</h1></div>
+    <div id="nonmutual-section" class="headline" style="margin-top:6px;"><h1>Non-Mutual Connections:</h1></div>
   </div>
+
+
 </div>
+
+
 
 <div id="network"></div>
 
@@ -99,6 +212,7 @@ fetch("https://raw.githubusercontent.com/xTimfie/InnitWeb/main/graph.json")
 const urlParams = new URLSearchParams(window.location.search);
 let showAll = urlParams.get("all") === "1";
 showAllCheckbox.checked = showAll; // <-- only set to true if URL has all=1
+
 
 
   // Toggle reload to show all or only connected nodes
@@ -152,7 +266,7 @@ showAllCheckbox.checked = showAll; // <-- only set to true if URL has all=1
     label: n.label,
     shape: 'circularImage',
     image: n.label ? `https://mc-heads.net/avatar/${n.label}` : 'https://mc-heads.net/avatar/null',
-    font: { face: 'Minecraftia', size: 14, align: 'bottom' },
+    font: { face: 'Minecraftia', size: 14, align: 'bottom', color: "#FFFFFF" },
     value: 10
   })));
 
@@ -193,6 +307,7 @@ showAllCheckbox.checked = showAll; // <-- only set to true if URL has all=1
   const connectionLists = document.getElementById("connection-lists");
   const toggleGrayBtn = document.getElementById("toggle-gray");
   let grayVisible = true;
+
   let currentNode = null;
 
   const index = {};
@@ -213,16 +328,17 @@ showAllCheckbox.checked = showAll; // <-- only set to true if URL has all=1
     else nonMutualDiv.classList.add("hidden");
   }
 
+
   searchInput.addEventListener('input',()=>{ const id=index[searchInput.value.trim().toLowerCase()]; if(id){currentNode=id; showConnections(id); network.focus(id,{scale:3,animation:{duration:500,easingFunction:'easeInOutQuad'}}); } });
 
-  network.on("selectNode", params => { currentNode=params.nodes[0]; searchInput.value=visNodes.get(currentNode).label; showConnections(currentNode); });
+  network.on("selectNode", params => { currentNode=params.nodes[0]; searchInput.value=visNodes.get(currentNode).label; showConnections(currentNode);});
   network.on("deselectNode", ()=>{ currentNode=null; connectionLists.classList.add("hidden"); });
 
   toggleGrayBtn.addEventListener("click",()=>{
     grayVisible=!grayVisible;
     const updates = visEdges.get().map(e=>!e.mutual?{id:e.id, hidden:!grayVisible, physics:grayVisible}:null).filter(Boolean);
     visEdges.update(updates);
-    toggleGrayBtn.textContent = grayVisible ? "Hide non-mutual connections" : "Show non-mutual connections";
+    toggleGrayBtn.textContent = grayVisible ? "→" : "⇋";
     network.stabilize(400);
     if(currentNode) showConnections(currentNode);
     updateStatus();
@@ -233,7 +349,6 @@ showAllCheckbox.checked = showAll; // <-- only set to true if URL has all=1
     const visibleEdges = visEdges.get({filter:e=>!e.hidden}).length;
     statusText.textContent=`Players: ${visibleNodes} | Connections: ${visibleEdges}`;
   }
-
   // Initial status update
   updateStatus();
 });
