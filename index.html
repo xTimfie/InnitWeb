@@ -8,13 +8,23 @@
 <style>
 /* Fonts */
 @font-face {
-    font-family: 'Minecraftia';
-    src: url('https://fontlibrary.org/assets/fonts/minecraftia/minecraftia-webfont.woff2') format('woff2'),
-         url('https://fontlibrary.org/assets/fonts/minecraftia/minecraftia-webfont.woff') format('woff');
+    font-family: 'Minecraft';
+    src: url('./fonts/Minecraft.otf') format('opentype');
     font-weight: normal;
     font-style: normal;
 }
-* { font-family: 'Minecraftia', monospace !important; }
+
+@font-face {
+    font-family: 'Minecraft';
+    src: url('./fonts/Minecraft-Bold.otf') format('opentype');
+    font-weight: bold;
+    font-style: normal;
+}
+
+/* Optional: apply globally */
+body, * {
+    font-family: 'Minecraft', monospace !important;
+}
 
 /* Reset body/html */
 html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; }
@@ -22,12 +32,21 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
 /* Loading overlay */
 #loading-overlay {
     position: fixed; width:80%; height:100%;  left: 20.6%; bottom: 31px;
-    background: #1E1E1E; display: flex; justify-content: center; align-items: center;
-    z-index: 9999; font-family: monospace;
+    background: transparent;          /* remove gray background */
+    display: flex; justify-content: center; align-items: center;
+    z-index: 9999; font-family: 'Minecraft', monospace !important;
+    pointer-events: none;
 }
+
+/* Optional: add subtle text shadow to keep text readable */
 #loading-text {
-    color: white; font-size: 32px; font-weight: bold; text-align: center;
+    color: white; 
+    font-size: 32px; 
+    font-weight: bold; 
+    text-align: center;
+    text-shadow: 1px 1px 3px rgba(0,0,0,0.7);
 }
+
 
 
 /* Left panel */
@@ -131,11 +150,13 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
   padding-right: 5px;
 }
 
-    #skin-viewer *{ background-image: "image-preview"; }
-
 /* Network container */
 #network {
     width:80%; height:100%;  margin-left: 20%;
+}
+
+#toggle-weight {
+    font-size: 20px;
 }
 
 /* Status bar */
@@ -159,7 +180,6 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
 </style>
 
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-<link rel="stylesheet" href="https://raw.githack.com/xTimfie/Skin-Editor/main/code/css/minecraft-skinviewer.css">
 
 </head>
 <body>
@@ -171,11 +191,11 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
 <div id="left-panel">
 
   <div id="top-buttons">
-    <button class="top-btn">1</button>
-    <button class="top-btn" id="toggle-gray">→</button>
-    <button class="top-btn" id="toggle-weight">I</button>
-    <button class="top-btn">4</button>
-    <button class="top-btn">5</button>
+    <button class="top-btn"></button>
+    <button class="top-btn" id="toggle-gray">-></button>
+    <button class="top-btn" id="toggle-weight">V</button>
+    <button class="top-btn"></button>
+    <button class="top-btn"></button>
   </div>
 
   <input id="search" placeholder="Search player..." />
@@ -200,263 +220,306 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
 </div>
 
 <script>
-fetch("./graph_optimized.json")
-.then(r => r.json())
-.then(data => {
+const overlay = document.getElementById("loading-overlay");
+const statusText = document.getElementById("status-text");
+const showAllCheckbox = document.getElementById("show-all-players");
 
-  const overlay = document.getElementById("loading-overlay");
-  const statusText = document.getElementById("status-text");
-  const showAllCheckbox = document.getElementById("show-all-players");
+// 1️⃣ Filter state
+let grayVisible = true;
+const minConnectionWeights = [1, 3, 5, 10, 25];
+let currentWeightModeIndex = 2;
 
-  // Check URL for all nodes
+// Check URL for all nodes
 const urlParams = new URLSearchParams(window.location.search);
 let showAll = urlParams.get("all") === "1";
-showAllCheckbox.checked = showAll; // <-- only set to true if URL has all=1
+showAllCheckbox.checked = showAll;
 
-
-
-  // Toggle reload to show all or only connected nodes
-  showAllCheckbox.addEventListener("change", () => {
+// Toggle reload to show all or only connected nodes
+showAllCheckbox.addEventListener("change", () => {
     const newUrl = new URL(window.location.href);
-    if (showAllCheckbox.checked) {
-      newUrl.searchParams.set("all", "1");
-    } else {
-      newUrl.searchParams.delete("all");
-    }
+    if (showAllCheckbox.checked) newUrl.searchParams.set("all", "1");
+    else newUrl.searchParams.delete("all");
     window.location.href = newUrl.toString();
-  });
-
-  // 1. Build nodes map
-  const nodesMap = new Map();
-  data.nodes.forEach(n => { if (n.uuid) nodesMap.set(n.uuid, { id: n.uuid, label: n.username || n.uuid }); });
-
-  // 2. Build raw edges
-  const rawEdges = [];
-  data.edges.forEach(e => { if (e.from_user_id && e.to_user_id) rawEdges.push({ from: e.from_user_id, to: e.to_user_id, weight: Number(e.total_mentions || 1) }); });
-
-  // 3. Merge mutual edges
-  const edgeMap = new Map();
-  rawEdges.forEach(e => {
-    const key = [e.from, e.to].sort().join("|");
-    if (!edgeMap.has(key)) edgeMap.set(key, { s: e.from < e.to ? e.from : e.to, t: e.from < e.to ? e.to : e.from, w1:0, w2:0 });
-    const entry = edgeMap.get(key);
-    if (e.from === entry.s) entry.w1 += e.weight; else entry.w2 += e.weight;
-  });
-
-  // 4. Build mergedEdges and connected node IDs
-  const mergedEdges = [];
-  const connectedIds = new Set();
-  edgeMap.forEach(e => {
-    if (e.w1 + e.w2 > 0) {
-      mergedEdges.push({ s:e.s, t:e.t, w1:e.w1, w2:e.w2, w:e.w1+e.w2, mutual:e.w1>0 && e.w2>0 });
-      connectedIds.add(e.s); connectedIds.add(e.t);
-    }
-  });
-
-  // 5. Filter nodes based on showAll
-  const nodes = showAll ? [...nodesMap.values()] : [...nodesMap.values()].filter(n => connectedIds.has(n.id));
-
-  // 6. Compute node degrees
-  const nodeDegrees = {};
-  mergedEdges.forEach(e => { nodeDegrees[e.s]=(nodeDegrees[e.s]||0)+1; nodeDegrees[e.t]=(nodeDegrees[e.t]||0)+1; });
-
-  const placeholderImage = new Image();
-  placeholderImage.src = "https://mc-heads.net/avatar/null";
-
-
-  // 7. Vis.js DataSets
-  const visNodes = new vis.DataSet(nodes.map(n => ({
-    id: n.id,
-    label: n.label,
-    shape: 'circularImage',
-    image: placeholderImage.src,
-    font: { face: 'Minecraftia', size: 14, align: 'bottom', color: "#FFFFFF" },
-    value: 10
-  })));
-
-  function interpolateColor(fraction, minColor, maxColor) {
-    fraction = Math.max(0, Math.min(1, fraction));
-    const r = Math.round(minColor[0] + fraction * (maxColor[0]-minColor[0]));
-    const g = Math.round(minColor[1] + fraction * (maxColor[1]-minColor[1]));
-    const b = Math.round(minColor[2] + fraction * (maxColor[2]-minColor[2]));
-    return `rgb(${r},${g},${b})`;
-  }
-
-  const EDGE_COLOR_CONFIG = { minColor: [102,178,255], maxColor: [255,165,0], maxMentions: 100 };
-
-  const visEdges = new vis.DataSet(mergedEdges.map(e => {
-    const degreeSum = (nodeDegrees[e.s]||1)+(nodeDegrees[e.t]||1);
-    let color = e.mutual ? interpolateColor(Math.min(1, Math.sqrt((e.w1*e.w2)/(EDGE_COLOR_CONFIG.maxMentions**2))), EDGE_COLOR_CONFIG.minColor, EDGE_COLOR_CONFIG.maxColor) : "rgb(192,192,192)";
-    return { id:`${e.s}-${e.t}`, from:e.s, to:e.t, width:1, color, w1:e.w1, w2:e.w2, mutual:e.mutual, length:150+degreeSum*15 };
-  }));
-
-  // 8. Create network
-  const network = new vis.Network(document.getElementById('network'), { nodes:visNodes, edges:visEdges }, {
-    nodes:{shape:'dot', scaling:{min:5,max:25}},
-    edges:{smooth:{type:'continuous'}},
-    physics:{enabled:true, stabilization:{iterations:2000}, barnesHut:{gravitationalConstant:-9000000, centralGravity:0.05, springLength:420, springConstant:0.08, damping:0.75, avoidOverlap:1.5}},
-    interaction:{selectConnectedEdges:false}
-  });
-
-  // 1️⃣ Disable physics after initial stabilization
-network.once("stabilizationIterationsDone", () => {
-    network.setOptions({ physics: false });
-    console.log("Initial stabilization complete, physics disabled.");
 });
 
-// 2️⃣ Enable physics while dragging a node
-network.on("dragStart", params => {
-    if (params.nodes.length) {
-        network.setOptions({ physics: true });
-        console.log("Node drag started, physics enabled.");
-    }
-});
+fetch("./graph_optimized.json")
+.then(r => r.json())
+.then(async data => {
 
-// 3️⃣ Disable physics again after drag ends and network stabilizes
-network.on("dragEnd", async params => {
-    if (params.nodes.length) {
-        // Give vis-network a tick to stabilize after drag
-        await new Promise(res => setTimeout(res, 100)); // 100ms is usually enough
-        network.setOptions({ physics: false });
-        console.log("Node drag ended, physics disabled again.");
-    }
-});
+    // 2️⃣ Build nodes map
+    const nodesMap = new Map();
+    data.nodes.forEach(n => { 
+        if (n.uuid) nodesMap.set(n.uuid, { id: n.uuid, label: n.username || n.uuid }); 
+    });
 
-  // Hide loading overlay after first draw
-  network.once("afterDrawing", async () => {
-        overlay.style.transition="opacity 0.5s"; 
-        overlay.style.opacity=0;
-        setTimeout(()=>overlay.style.display='none',500);
+    // 3️⃣ Build raw edges
+    const rawEdges = [];
+    data.edges.forEach(e => { 
+        if (e.from_user_id && e.to_user_id) rawEdges.push({ from: e.from_user_id, to: e.to_user_id, weight: Number(e.total_mentions || 1) }); 
+    });
 
-        // async replacement of images
-        for (const n of nodes) {
-            visNodes.update({ id: n.id, image: `https://mc-heads.net/avatar/${n.label}` });
-            await new Promise(res => setTimeout(res, 50)); // optional progressive effect
+    // 4️⃣ Merge mutual edges
+    const edgeMap = new Map();
+    rawEdges.forEach(e => {
+        const key = [e.from, e.to].sort().join("|");
+        if (!edgeMap.has(key)) edgeMap.set(key, { s: e.from < e.to ? e.from : e.to, t: e.from < e.to ? e.to : e.from, w1:0, w2:0 });
+        const entry = edgeMap.get(key);
+        if (e.from === entry.s) entry.w1 += e.weight; else entry.w2 += e.weight;
+    });
+
+    // 5️⃣ Build mergedEdges and connected node IDs
+    const mergedEdges = [];
+    const connectedIds = new Set();
+    edgeMap.forEach(e => {
+        if (e.w1 + e.w2 > 0) {
+            mergedEdges.push({ s:e.s, t:e.t, w1:e.w1, w2:e.w2, w:e.w1+e.w2, mutual:e.w1>0 && e.w2>0 });
+            connectedIds.add(e.s); connectedIds.add(e.t);
         }
     });
 
-  // 9. UI logic
-  const searchInput = document.getElementById('search');
-  const mutualDiv = document.getElementById("mutual-section");
-  const nonMutualDiv = document.getElementById("nonmutual-section");
-  const connectionLists = document.getElementById("connection-lists");
-  const toggleGrayBtn = document.getElementById("toggle-gray");
-  const toggleMinWeight = document.getElementById("toggle-weight");
-  let grayVisible = true;
+    // 6️⃣ Filter nodes based on showAll
+    const nodes = showAll ? [...nodesMap.values()] : [...nodesMap.values()].filter(n => connectedIds.has(n.id));
 
-  let currentNode = null;
+    // 7️⃣ Compute node degrees
+    const nodeDegrees = {};
+    mergedEdges.forEach(e => { nodeDegrees[e.s]=(nodeDegrees[e.s]||0)+1; nodeDegrees[e.t]=(nodeDegrees[e.t]||0)+1; });
 
-  const index = {};
-  nodes.forEach(n=>index[n.label.toLowerCase()]=n.id);
+    const placeholderImage = "https://mc-heads.net/avatar/null";
 
-  function renderSection(div, title, edges, nodeId){
-    if(!edges.length){ div.innerHTML=`<b>${title}</b><br><i>No connections</i>`; return; }
-    const list = edges.map(e=>{ const other=e.from===nodeId?e.to:e.from; return { label: visNodes.get(other).label, weight:e.w1+e.w2 }; })
-                     .sort((a,b)=>b.weight-a.weight);
-    div.innerHTML=`<b>${title}</b><br>`+list.map(c=>`<div class="connection-item">${c.label}</div>`).join("");
-  }
+    // 8️⃣ Vis.js DataSets (start empty for progressive loading)
+    const visNodes = new vis.DataSet([]);
+    const visEdges = new vis.DataSet([]);
 
-  function showConnections(nodeId){
-    connectionLists.classList.remove("hidden");
-    const edges = visEdges.get({ filter: e => e.from===nodeId || e.to===nodeId });
-    renderSection(mutualDiv,"Mutual Connections:", edges.filter(e=>e.mutual), nodeId);
-    if(grayVisible){ nonMutualDiv.classList.remove("hidden"); renderSection(nonMutualDiv,"Non-Mutual Connections:", edges.filter(e=>!e.mutual), nodeId);}
-    else nonMutualDiv.classList.add("hidden");
-  }
-
-
-  searchInput.addEventListener('input',()=>{ const id=index[searchInput.value.trim().toLowerCase()]; if(id){currentNode=id; showConnections(id); network.focus(id,{scale:3,animation:{duration:500,easingFunction:'easeInOutQuad'}}); } });
-
-  network.on("selectNode", params => { currentNode=params.nodes[0]; searchInput.value=visNodes.get(currentNode).label; showConnections(currentNode);});
-  network.on("deselectNode", ()=>{ currentNode=null; connectionLists.classList.add("hidden"); });
-
-  toggleGrayBtn.addEventListener("click", () => {
-    grayVisible = !grayVisible;
-
-    // Update edges
-    const edgeUpdates = visEdges.get().map(e => {
-        if (!e.mutual) return { id: e.id, hidden: !grayVisible, physics: grayVisible };
-        return null;
-    }).filter(Boolean);
-    visEdges.update(edgeUpdates);
-
-    // Update nodes
-    const nodeUpdates = visNodes.get().map(node => {
-        // Get edges connected to this node
-        const connectedEdges = visEdges.get({ filter: e => e.from === node.id || e.to === node.id });
-        // Show node if it has any mutual edge OR if gray edges are visible
-        const hasVisibleEdge = connectedEdges.some(e => e.mutual || (grayVisible && !e.mutual));
-        return { id: node.id, hidden: !hasVisibleEdge };
-    });
-    visNodes.update(nodeUpdates);
-
-    // Update button text
-    toggleGrayBtn.textContent = grayVisible ? "→" : "⇋";
-
-    network.stabilize(400);
-
-    // Re-show connections if a node is selected
-    if (currentNode) showConnections(currentNode);
-    
-    updateStatus();
-});
-
-const minConnectionWeights = [1, 3, 5, 10, 25];
-let currentWeightModeIndex = 0; // starts at 0 → weight 1
-
-toggleMinWeight.addEventListener("click", () => {
-    // Cycle to next mode
-    currentWeightModeIndex = (currentWeightModeIndex + 1) % minConnectionWeights.length;
-    const minWeight = minConnectionWeights[currentWeightModeIndex];
-
-    // Switch-case to set symbol on the button
-    let symbol;
-    switch(currentWeightModeIndex) {
-        case 0: symbol = "I"; break;
-        case 1: symbol = "III"; break;
-        case 2: symbol = "V"; break;
-        case 3: symbol = "X"; break;
-        case 4: symbol = "XXV"; break;
-        default: symbol = "I";
+    function interpolateColor(fraction, minColor, maxColor) {
+        fraction = Math.max(0, Math.min(1, fraction));
+        const r = Math.round(minColor[0] + fraction * (maxColor[0]-minColor[0]));
+        const g = Math.round(minColor[1] + fraction * (maxColor[1]-minColor[1]));
+        const b = Math.round(minColor[2] + fraction * (maxColor[2]-minColor[2]));
+        return `rgb(${r},${g},${b})`;
     }
-    toggleMinWeight.textContent = symbol; // update button display
 
-    // Update edges based on mode + gray visibility
-    const edgeUpdates = visEdges.get().map(e => {
-        const weight = e.w1 + e.w2;
-        const showEdge = (e.mutual || (grayVisible && !e.mutual)) && weight >= minWeight;
-        return { id: e.id, hidden: !showEdge, physics: showEdge };
+    const EDGE_COLOR_CONFIG = { minColor: [102,178,255], maxColor: [255,165,0], maxMentions: 100 };
+
+    // 9️⃣ Create network
+    const network = new vis.Network(document.getElementById('network'), {
+        nodes: visNodes,
+        edges: visEdges
+    }, {
+        nodes: { shape: 'dot', scaling: { min: 5, max: 25 } },
+        edges: { smooth: { type: 'continuous' } },
+        physics: { enabled: true, stabilization: { iterations: 2000 }, 
+            barnesHut: { gravitationalConstant: -9000000, centralGravity: 0.05, springLength: 500, springConstant: 0.08, damping: 0.75, avoidOverlap: 1.5 } },
+        interaction: { selectConnectedEdges: false }
     });
-    visEdges.update(edgeUpdates);
 
-    // Update nodes visibility
-    const nodeUpdates = visNodes.get().map(node => {
-        const connectedEdges = visEdges.get({ filter: e => e.from === node.id || e.to === node.id });
-        const hasVisibleEdge = connectedEdges.some(e => !e.hidden);
-        return { id: node.id, hidden: !hasVisibleEdge };
+    // 10️⃣ Progressive network builder
+    async function buildNetworkProgressively(nodes, edges) {
+        let overlayHidden = false;
+
+        // Filter edges by grayVisible and min weight
+        const minWeight = minConnectionWeights[currentWeightModeIndex];
+        const filteredEdges = edges.filter(e => (e.mutual || (grayVisible && !e.mutual)) && (e.w1 + e.w2) >= minWeight);
+
+        // Filter nodes to those connected to filtered edges
+        const connectedIds = new Set();
+        filteredEdges.forEach(e => { connectedIds.add(e.s); connectedIds.add(e.t); });
+        const filteredNodes = nodes.filter(n => connectedIds.has(n.id));
+
+        // 1️⃣ Nodes — batched
+        const NODE_BATCHES = 10;
+        const nodeBatchSize = Math.ceil(filteredNodes.length / NODE_BATCHES);
+        for (let i = 0; i < filteredNodes.length; i += nodeBatchSize) {
+            const batch = filteredNodes.slice(i, i + nodeBatchSize);
+            const nodeItems = batch.map(n => ({
+                id: n.id, label: n.label, shape: 'circularImage',
+                image: placeholderImage,
+                font: { face: 'Minecraft', size: 14, color: "#FFFFFF" },
+                value: 10, shadow: false
+            }));
+            visNodes.add(nodeItems);
+
+            if (!overlayHidden && visNodes.length >= 50) {
+                overlayHidden = true;
+                overlay.style.transition = "opacity 0.5s";
+                overlay.style.opacity = 0;
+                setTimeout(() => overlay.style.display = "none", 500);
+            }
+
+            updateStatus();
+            await new Promise(r => setTimeout(r, 0));
+        }
+
+        // Ensure overlay hidden even if <50 nodes
+        if (!overlayHidden) {
+            overlay.style.transition = "opacity 0.5s";
+            overlay.style.opacity = 0;
+            setTimeout(() => overlay.style.display = "none", 500);
+        }
+
+        // 2️⃣ Edges — batched
+        const EDGE_BATCH_SIZE = 10;
+        for (let i = 0; i < filteredEdges.length; i += EDGE_BATCH_SIZE) {
+            const batch = filteredEdges.slice(i, i + EDGE_BATCH_SIZE);
+            const edgeItems = [];
+
+            for (const e of batch) {
+                const id = `${e.s}-${e.t}`;
+                if (visEdges.get(id)) continue;
+
+                const degreeSum = (nodeDegrees[e.s] || 1) + (nodeDegrees[e.t] || 1);
+                const color = e.mutual
+                    ? interpolateColor(Math.min(1, Math.sqrt((e.w1 * e.w2) / (EDGE_COLOR_CONFIG.maxMentions ** 2))),
+                        EDGE_COLOR_CONFIG.minColor, EDGE_COLOR_CONFIG.maxColor)
+                    : "rgb(192,192,192)";
+
+                edgeItems.push({
+                    id, from: e.s, to: e.t, width: 1, color,
+                    w1: e.w1, w2: e.w2, mutual: e.mutual,
+                    length: 150 + degreeSum * 15, smooth: false, shadow: false
+                });
+            }
+
+            if (edgeItems.length) visEdges.add(edgeItems);
+            updateStatus();
+            await new Promise(r => setTimeout(r, 0));
+        }
+
+        // 3️⃣ Physics boost → decay
+        network.setOptions({ physics: { enabled: true, stabilization: false, barnesHut: { gravitationalConstant:-2e8, centralGravity:0.5, springLength:200, springConstant:0.5, damping:0.2 } }});
+        const steps = 10;
+        const stepDelay = 800;
+        for (let i = 0; i < steps; i++) {
+            await new Promise(r => setTimeout(r, stepDelay));
+            network.setOptions({ physics: { barnesHut: { gravitationalConstant:-2e8/(i+1), centralGravity:0.5/(i+1), springLength:200+i*30, springConstant:0.5/(i+1), damping:0.2+i*0.05 } }});
+        }
+        network.setOptions({ physics: false });
+
+        // 4️⃣ Avatars — batched
+        const AVATAR_BATCHES = 10;
+        const avatarBatchSize = Math.ceil(filteredNodes.length / AVATAR_BATCHES);
+        for (let i = 0; i < filteredNodes.length; i += avatarBatchSize) {
+            const batch = filteredNodes.slice(i, i + avatarBatchSize);
+            visNodes.update(batch.map(n => ({ id: n.id, image: `https://mc-heads.net/avatar/${n.label}` })));
+            updateStatus();
+            await new Promise(r => setTimeout(r, 50));
+        }
+    }
+
+    // 11️⃣ Rebuild network safely
+    async function rebuildNetwork() {
+    visNodes.clear();
+    visEdges.clear();
+
+    let filteredNodes = nodes;
+    let filteredEdges = mergedEdges;
+
+    if (currentNode) {
+        if (displayMode === "D") {
+            filteredEdges = mergedEdges.filter(e => e.s === currentNode || e.t === currentNode);
+            const connectedIds = new Set();
+            filteredEdges.forEach(e => { connectedIds.add(e.s); connectedIds.add(e.t); });
+            filteredNodes = nodes.filter(n => connectedIds.has(n.id));
+        } else if (displayMode === "T") {
+            const visited = new Set([currentNode]);
+            let frontier = [currentNode];
+            let step = 0;
+            while (frontier.length && step < 3) {
+                const nextFrontier = [];
+                frontier.forEach(nodeId => {
+                    mergedEdges.forEach(e => {
+                        const neighbor = e.s === nodeId ? e.t : e.t === nodeId ? e.s : null;
+                        if (neighbor && !visited.has(neighbor)) {
+                            visited.add(neighbor);
+                            nextFrontier.push(neighbor);
+                        }
+                    });
+                });
+                frontier = nextFrontier;
+                step++;
+            }
+            filteredNodes = nodes.filter(n => visited.has(n.id));
+            filteredEdges = mergedEdges.filter(e => visited.has(e.s) && visited.has(e.t));
+        }
+    }
+
+    await buildNetworkProgressively(filteredNodes, filteredEdges);
+}
+    await buildNetworkProgressively(nodes, mergedEdges);
+
+
+    // 12️⃣ Node drag physics
+    network.on("dragStart", params => { if (params.nodes.length) network.setOptions({ physics:true }); });
+    network.on("dragEnd", async params => { if (params.nodes.length) { await new Promise(r=>setTimeout(r,100)); network.setOptions({ physics:false }); } });
+
+    // 13️⃣ Search and connections panel
+    const searchInput = document.getElementById('search');
+    const mutualDiv = document.getElementById("mutual-section");
+    const nonMutualDiv = document.getElementById("nonmutual-section");
+    const connectionLists = document.getElementById("connection-lists");
+    let currentNode = null;
+
+    const index = {};
+    nodes.forEach(n=>index[n.label.toLowerCase()]=n.id);
+
+    function renderSection(div, title, edges, nodeId){
+        if (!edges.length) {
+            div.innerHTML = `<b>${title}</b><br><i><span style="color: gray;">No connections</span></i>`;
+            return;
+        }
+        const list = edges.map(e=>{ const other=e.from===nodeId?e.to:e.from; return { label: visNodes.get(other).label, weight:e.w1+e.w2 }; })
+                         .sort((a,b)=>b.weight-a.weight);
+        div.innerHTML=`<b>${title}</b><br>`+list.map(c=>`<div class="connection-item">${c.label}</div>`).join("");
+    }
+
+    function showConnections(nodeId){
+        connectionLists.classList.remove("hidden");
+        const edges = visEdges.get({ filter: e => e.from===nodeId || e.to===nodeId });
+        renderSection(mutualDiv,"Mutual Connections:", edges.filter(e=>e.mutual), nodeId);
+        if(grayVisible){ nonMutualDiv.classList.remove("hidden"); renderSection(nonMutualDiv,"Non-Mutual Connections:", edges.filter(e=>!e.mutual), nodeId);}
+        else nonMutualDiv.classList.add("hidden");
+    }
+
+    searchInput.addEventListener('input', () => {
+        const name = searchInput.value.trim().toLowerCase();
+        const id = index[name];
+        if (!id) return;
+        currentNode = id;
+        if (visNodes.get(id)) {
+            showConnections(id);
+            network.focus(id, { scale: 3, animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+        }
     });
-    visNodes.update(nodeUpdates);
 
-    network.stabilize(400);
+    network.on("selectNode", params => { currentNode=params.nodes[0]; searchInput.value=visNodes.get(currentNode).label; showConnections(currentNode); });
+    network.on("deselectNode", ()=>{ currentNode=null; connectionLists.classList.add("hidden"); });
 
-    if (currentNode) showConnections(currentNode);
+    // 14️⃣ Toggle gray edges
+    document.getElementById("toggle-gray").addEventListener("click", async () => {
+        grayVisible = !grayVisible;
+        document.getElementById("toggle-gray").textContent = grayVisible ? "->" : "<-->";
+        await rebuildNetwork();
+    });
+
+    // 15️⃣ Toggle min connection weight
+    document.getElementById("toggle-weight").addEventListener("click", async () => {
+        currentWeightModeIndex = (currentWeightModeIndex + 1) % minConnectionWeights.length;
+        const symbols = ["I","III","V","X","XXV"];
+        document.getElementById("toggle-weight").textContent = symbols[currentWeightModeIndex];
+        await rebuildNetwork();
+    });
+
+    // 16️⃣ Status update
+    function updateStatus(){
+        const visibleNodes = visNodes.get().length;
+        const visibleEdges = visEdges.get({filter:e=>!e.hidden}).length;
+        statusText.textContent=`Players: ${visibleNodes} | Connections: ${visibleEdges}`;
+    }
     updateStatus();
 
-    console.log("Mode set to:", minWeight);
-});
-
-
-
-
-  function updateStatus(){
-    const visibleNodes = visNodes.get().length;
-    const visibleEdges = visEdges.get({filter:e=>!e.hidden}).length;
-    statusText.textContent=`Players: ${visibleNodes} | Connections: ${visibleEdges}`;
-  }
-  // Initial status update
-  updateStatus();
 });
 </script>
+
+
 
 </body>
 </html>
