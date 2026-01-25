@@ -223,18 +223,25 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
 const overlay = document.getElementById("loading-overlay");
 const statusText = document.getElementById("status-text");
 const showAllCheckbox = document.getElementById("show-all-players");
+const searchInput = document.getElementById('search');
+const mutualDiv = document.getElementById("mutual-section");
+const nonMutualDiv = document.getElementById("nonmutual-section");
+const connectionLists = document.getElementById("connection-lists");
 
-// 1️⃣ Filter state
+// 1️⃣ Global filter state
 let grayVisible = true;
 const minConnectionWeights = [1, 3, 5, 10, 25];
 let currentWeightModeIndex = 2;
+const minConnectionDistance = [Infinity, 1, 2, 3, 5];
+let currentDistanceModeIndex = 0;
 
-// Check URL for all nodes
+let currentNode = null;
+let nodesMap, mergedEdges, nodes, visNodes, visEdges, network, nodeDegrees;
+
+// Show all toggle from URL
 const urlParams = new URLSearchParams(window.location.search);
 let showAll = urlParams.get("all") === "1";
 showAllCheckbox.checked = showAll;
-
-// Toggle reload to show all or only connected nodes
 showAllCheckbox.addEventListener("change", () => {
     const newUrl = new URL(window.location.href);
     if (showAllCheckbox.checked) newUrl.searchParams.set("all", "1");
@@ -242,23 +249,22 @@ showAllCheckbox.addEventListener("change", () => {
     window.location.href = newUrl.toString();
 });
 
-fetch("./graph_optimized.json")
-.then(r => r.json())
-.then(async data => {
+// 2️⃣ Load JSON
+fetch("./graph_optimized.json").then(r => r.json()).then(async data => {
 
-    // 2️⃣ Build nodes map
-    const nodesMap = new Map();
+    // Build nodes map
+    nodesMap = new Map();
     data.nodes.forEach(n => { 
         if (n.uuid) nodesMap.set(n.uuid, { id: n.uuid, label: n.username || n.uuid }); 
     });
 
-    // 3️⃣ Build raw edges
+    // Build raw edges
     const rawEdges = [];
     data.edges.forEach(e => { 
         if (e.from_user_id && e.to_user_id) rawEdges.push({ from: e.from_user_id, to: e.to_user_id, weight: Number(e.total_mentions || 1) }); 
     });
 
-    // 4️⃣ Merge mutual edges
+    // Merge mutual edges
     const edgeMap = new Map();
     rawEdges.forEach(e => {
         const key = [e.from, e.to].sort().join("|");
@@ -267,8 +273,8 @@ fetch("./graph_optimized.json")
         if (e.from === entry.s) entry.w1 += e.weight; else entry.w2 += e.weight;
     });
 
-    // 5️⃣ Build mergedEdges and connected node IDs
-    const mergedEdges = [];
+    // Build merged edges & connected nodes
+    mergedEdges = [];
     const connectedIds = new Set();
     edgeMap.forEach(e => {
         if (e.w1 + e.w2 > 0) {
@@ -277,19 +283,19 @@ fetch("./graph_optimized.json")
         }
     });
 
-    // 6️⃣ Filter nodes based on showAll
-    const nodes = showAll ? [...nodesMap.values()] : [...nodesMap.values()].filter(n => connectedIds.has(n.id));
+    // Filter nodes based on showAll
+    nodes = showAll ? [...nodesMap.values()] : [...nodesMap.values()].filter(n => connectedIds.has(n.id));
 
-    // 7️⃣ Compute node degrees
-    const nodeDegrees = {};
+    // Node degrees
+    nodeDegrees = {};
     mergedEdges.forEach(e => { nodeDegrees[e.s]=(nodeDegrees[e.s]||0)+1; nodeDegrees[e.t]=(nodeDegrees[e.t]||0)+1; });
 
+    // Vis.js datasets
+    visNodes = new vis.DataSet([]);
+    visEdges = new vis.DataSet([]);
     const placeholderImage = "https://mc-heads.net/avatar/null";
 
-    // 8️⃣ Vis.js DataSets (start empty for progressive loading)
-    const visNodes = new vis.DataSet([]);
-    const visEdges = new vis.DataSet([]);
-
+    // Helper: color interpolation for edges
     function interpolateColor(fraction, minColor, maxColor) {
         fraction = Math.max(0, Math.min(1, fraction));
         const r = Math.round(minColor[0] + fraction * (maxColor[0]-minColor[0]));
@@ -297,14 +303,10 @@ fetch("./graph_optimized.json")
         const b = Math.round(minColor[2] + fraction * (maxColor[2]-minColor[2]));
         return `rgb(${r},${g},${b})`;
     }
-
     const EDGE_COLOR_CONFIG = { minColor: [102,178,255], maxColor: [255,165,0], maxMentions: 100 };
 
-    // 9️⃣ Create network
-    const network = new vis.Network(document.getElementById('network'), {
-        nodes: visNodes,
-        edges: visEdges
-    }, {
+    // 3️⃣ Create network
+    network = new vis.Network(document.getElementById('network'), { nodes: visNodes, edges: visEdges }, {
         nodes: { shape: 'dot', scaling: { min: 5, max: 25 } },
         edges: { smooth: { type: 'continuous' } },
         physics: { enabled: true, stabilization: { iterations: 2000 }, 
@@ -312,212 +314,184 @@ fetch("./graph_optimized.json")
         interaction: { selectConnectedEdges: false }
     });
 
-    // 10️⃣ Progressive network builder
-    async function buildNetworkProgressively(nodes, edges) {
+    // 4️⃣ Progressive builder
+    async function buildNetworkProgressively(nodesArr, edgesArr) {
         let overlayHidden = false;
-
-        // Filter edges by grayVisible and min weight
         const minWeight = minConnectionWeights[currentWeightModeIndex];
-        const filteredEdges = edges.filter(e => (e.mutual || (grayVisible && !e.mutual)) && (e.w1 + e.w2) >= minWeight);
-
-        // Filter nodes to those connected to filtered edges
+        const filteredEdges = edgesArr.filter(e => (e.mutual || grayVisible) && (e.w1 + e.w2) >= minWeight);
         const connectedIds = new Set();
         filteredEdges.forEach(e => { connectedIds.add(e.s); connectedIds.add(e.t); });
-        const filteredNodes = nodes.filter(n => connectedIds.has(n.id));
+        const filteredNodes = nodesArr.filter(n => connectedIds.has(n.id));
 
-        // 1️⃣ Nodes — batched
+        // Nodes batched
         const NODE_BATCHES = 10;
         const nodeBatchSize = Math.ceil(filteredNodes.length / NODE_BATCHES);
-        for (let i = 0; i < filteredNodes.length; i += nodeBatchSize) {
-            const batch = filteredNodes.slice(i, i + nodeBatchSize);
-            const nodeItems = batch.map(n => ({
-                id: n.id, label: n.label, shape: 'circularImage',
-                image: placeholderImage,
-                font: { face: 'Minecraft', size: 14, color: "#FFFFFF" },
-                value: 10, shadow: false
+        for (let i=0;i<filteredNodes.length;i+=nodeBatchSize){
+            const batch = filteredNodes.slice(i,i+nodeBatchSize);
+            const nodeItems = batch.map(n=>({
+                id: n.id, label: n.label, shape:'circularImage', image: placeholderImage,
+                font:{ face:'Minecraft', size:14, color:"#FFF" }, value:10, shadow:false
             }));
             visNodes.add(nodeItems);
-
-            if (!overlayHidden && visNodes.length >= 50) {
+            if (!overlayHidden && visNodes.length >= 50){
                 overlayHidden = true;
                 overlay.style.transition = "opacity 0.5s";
                 overlay.style.opacity = 0;
-                setTimeout(() => overlay.style.display = "none", 500);
+                setTimeout(()=>overlay.style.display="none",500);
             }
-
             updateStatus();
-            await new Promise(r => setTimeout(r, 0));
+            await new Promise(r=>setTimeout(r,0));
         }
 
-        // Ensure overlay hidden even if <50 nodes
-        if (!overlayHidden) {
-            overlay.style.transition = "opacity 0.5s";
-            overlay.style.opacity = 0;
-            setTimeout(() => overlay.style.display = "none", 500);
-        }
-
-        // 2️⃣ Edges — batched
-        const EDGE_BATCH_SIZE = 10;
-        for (let i = 0; i < filteredEdges.length; i += EDGE_BATCH_SIZE) {
-            const batch = filteredEdges.slice(i, i + EDGE_BATCH_SIZE);
+        // Edges batched
+        const EDGE_BATCH_SIZE=10;
+        for (let i=0;i<filteredEdges.length;i+=EDGE_BATCH_SIZE){
+            const batch = filteredEdges.slice(i,i+EDGE_BATCH_SIZE);
             const edgeItems = [];
-
-            for (const e of batch) {
-                const id = `${e.s}-${e.t}`;
+            for (const e of batch){
+                const id=`${e.s}-${e.t}`;
                 if (visEdges.get(id)) continue;
-
-                const degreeSum = (nodeDegrees[e.s] || 1) + (nodeDegrees[e.t] || 1);
+                const degreeSum = (nodeDegrees[e.s]||1)+(nodeDegrees[e.t]||1);
                 const color = e.mutual
-                    ? interpolateColor(Math.min(1, Math.sqrt((e.w1 * e.w2) / (EDGE_COLOR_CONFIG.maxMentions ** 2))),
+                    ? interpolateColor(Math.min(1, Math.sqrt((e.w1*e.w2)/(EDGE_COLOR_CONFIG.maxMentions**2))),
                         EDGE_COLOR_CONFIG.minColor, EDGE_COLOR_CONFIG.maxColor)
                     : "rgb(192,192,192)";
-
-                edgeItems.push({
-                    id, from: e.s, to: e.t, width: 1, color,
-                    w1: e.w1, w2: e.w2, mutual: e.mutual,
-                    length: 150 + degreeSum * 15, smooth: false, shadow: false
-                });
+                edgeItems.push({id, from:e.s, to:e.t, width:1, color, w1:e.w1, w2:e.w2, mutual:e.mutual,
+                                length:150+degreeSum*15, smooth:false, shadow:false});
             }
-
-            if (edgeItems.length) visEdges.add(edgeItems);
+            if(edgeItems.length) visEdges.add(edgeItems);
             updateStatus();
-            await new Promise(r => setTimeout(r, 0));
+            await new Promise(r=>setTimeout(r,0));
         }
 
-        // 3️⃣ Physics boost → decay
-        network.setOptions({ physics: { enabled: true, stabilization: false, barnesHut: { gravitationalConstant:-2e8, centralGravity:0.5, springLength:200, springConstant:0.5, damping:0.2 } }});
-        const steps = 10;
-        const stepDelay = 800;
-        for (let i = 0; i < steps; i++) {
-            await new Promise(r => setTimeout(r, stepDelay));
-            network.setOptions({ physics: { barnesHut: { gravitationalConstant:-2e8/(i+1), centralGravity:0.5/(i+1), springLength:200+i*30, springConstant:0.5/(i+1), damping:0.2+i*0.05 } }});
-        }
-        network.setOptions({ physics: false });
+        // Physics
+        network.setOptions({ physics:false });
 
-        // 4️⃣ Avatars — batched
-        const AVATAR_BATCHES = 10;
-        const avatarBatchSize = Math.ceil(filteredNodes.length / AVATAR_BATCHES);
-        for (let i = 0; i < filteredNodes.length; i += avatarBatchSize) {
-            const batch = filteredNodes.slice(i, i + avatarBatchSize);
-            visNodes.update(batch.map(n => ({ id: n.id, image: `https://mc-heads.net/avatar/${n.label}` })));
-            updateStatus();
-            await new Promise(r => setTimeout(r, 50));
-        }
+        // Avatars
+        filteredNodes.forEach(n => {
+            visNodes.update({ id: n.id, image: `https://mc-heads.net/avatar/${n.label}` });
+        });
     }
 
-    // 11️⃣ Rebuild network safely
+    // 5️⃣ Rebuild network based on current node & distance
     async function rebuildNetwork() {
-    visNodes.clear();
-    visEdges.clear();
+        visNodes.clear(); visEdges.clear();
 
-    let filteredNodes = nodes;
-    let filteredEdges = mergedEdges;
+        let filteredNodes = nodes;
+        let filteredEdges = mergedEdges;
 
-    if (currentNode) {
-        if (displayMode === "D") {
-            filteredEdges = mergedEdges.filter(e => e.s === currentNode || e.t === currentNode);
-            const connectedIds = new Set();
-            filteredEdges.forEach(e => { connectedIds.add(e.s); connectedIds.add(e.t); });
-            filteredNodes = nodes.filter(n => connectedIds.has(n.id));
-        } else if (displayMode === "T") {
-            const visited = new Set([currentNode]);
-            let frontier = [currentNode];
-            let step = 0;
-            while (frontier.length && step < 3) {
-                const nextFrontier = [];
-                frontier.forEach(nodeId => {
-                    mergedEdges.forEach(e => {
-                        const neighbor = e.s === nodeId ? e.t : e.t === nodeId ? e.s : null;
-                        if (neighbor && !visited.has(neighbor)) {
-                            visited.add(neighbor);
-                            nextFrontier.push(neighbor);
-                        }
+        if (currentNode){
+            const maxDist = minConnectionDistance[currentDistanceModeIndex];
+            if (maxDist !== Infinity){
+                const visited = new Set([currentNode]);
+                let frontier = [currentNode]; let depth=0;
+                while(frontier.length && depth<maxDist){
+                    const next = [];
+                    frontier.forEach(nodeId => {
+                        mergedEdges.forEach(e => {
+                            const neighbor = e.s===nodeId?e.t:e.t===nodeId?e.s:null;
+                            if (neighbor && !visited.has(neighbor)){
+                                visited.add(neighbor);
+                                next.push(neighbor);
+                            }
+                        });
                     });
-                });
-                frontier = nextFrontier;
-                step++;
+                    frontier = next; depth++;
+                }
+                filteredNodes = nodes.filter(n=>visited.has(n.id));
+                filteredEdges = mergedEdges.filter(e=>visited.has(e.s)&&visited.has(e.t));
             }
-            filteredNodes = nodes.filter(n => visited.has(n.id));
-            filteredEdges = mergedEdges.filter(e => visited.has(e.s) && visited.has(e.t));
         }
+
+        await buildNetworkProgressively(filteredNodes, filteredEdges);
     }
 
-    await buildNetworkProgressively(filteredNodes, filteredEdges);
-}
-    await buildNetworkProgressively(nodes, mergedEdges);
-
-
-    // 12️⃣ Node drag physics
-    network.on("dragStart", params => { if (params.nodes.length) network.setOptions({ physics:true }); });
-    network.on("dragEnd", async params => { if (params.nodes.length) { await new Promise(r=>setTimeout(r,100)); network.setOptions({ physics:false }); } });
-
-    // 13️⃣ Search and connections panel
-    const searchInput = document.getElementById('search');
-    const mutualDiv = document.getElementById("mutual-section");
-    const nonMutualDiv = document.getElementById("nonmutual-section");
-    const connectionLists = document.getElementById("connection-lists");
-    let currentNode = null;
-
-    const index = {};
-    nodes.forEach(n=>index[n.label.toLowerCase()]=n.id);
-
+    // 6️⃣ Helper: show connections panel
     function renderSection(div, title, edges, nodeId){
-        if (!edges.length) {
-            div.innerHTML = `<b>${title}</b><br><i><span style="color: gray;">No connections</span></i>`;
-            return;
+        if(!edges.length){
+            div.innerHTML = `<b>${title}</b><br><i><span style="color: gray;">No connections</span></i>`; return;
         }
-        const list = edges.map(e=>{ const other=e.from===nodeId?e.to:e.from; return { label: visNodes.get(other).label, weight:e.w1+e.w2 }; })
-                         .sort((a,b)=>b.weight-a.weight);
-        div.innerHTML=`<b>${title}</b><br>`+list.map(c=>`<div class="connection-item">${c.label}</div>`).join("");
+        const list = edges.map(e=>{ const other = e.from===nodeId?e.to:e.from; return {label:visNodes.get(other)?.label||other,id:other,weight:e.w1+e.w2};})
+                          .sort((a,b)=>b.weight-a.weight);
+        div.innerHTML = `<b>${title}</b><br>` + list.map(c=>`<div class="connection-item" data-id="${c.id}">${c.label}</div>`).join("");
+        // click listeners
+        div.querySelectorAll(".connection-item").forEach(el=>{
+            el.addEventListener("click", async ()=>{
+                selectPlayer(el.dataset.id);
+            });
+        });
     }
 
     function showConnections(nodeId){
         connectionLists.classList.remove("hidden");
-        const edges = visEdges.get({ filter: e => e.from===nodeId || e.to===nodeId });
-        renderSection(mutualDiv,"Mutual Connections:", edges.filter(e=>e.mutual), nodeId);
-        if(grayVisible){ nonMutualDiv.classList.remove("hidden"); renderSection(nonMutualDiv,"Non-Mutual Connections:", edges.filter(e=>!e.mutual), nodeId);}
-        else nonMutualDiv.classList.add("hidden");
+        const edges = visEdges.get({filter:e=>e.from===nodeId||e.to===nodeId});
+        renderSection(mutualDiv,"Mutual Connections:",edges.filter(e=>e.mutual),nodeId);
+        if(grayVisible){
+            nonMutualDiv.classList.remove("hidden");
+            renderSection(nonMutualDiv,"Non-Mutual Connections:",edges.filter(e=>!e.mutual),nodeId);
+        } else nonMutualDiv.classList.add("hidden");
     }
 
-    searchInput.addEventListener('input', () => {
+    // 7️⃣ Unified player selection
+    async function selectPlayer(nodeId){
+        currentNode=nodeId;
+        searchInput.value = nodesMap.get(nodeId)?.label || nodeId;
+        if(minConnectionDistance[currentDistanceModeIndex]!==Infinity){
+            await rebuildNetwork();
+        }
+        showConnections(nodeId);
+        network.focus(nodeId,{scale:3,animation:{duration:500,easingFunction:'easeInOutQuad'}});
+    }
+
+    // 8️⃣ Search input
+    const index = {};
+    nodes.forEach(n=>index[n.label.toLowerCase()]=n.id);
+    searchInput.addEventListener('input',()=>{ 
         const name = searchInput.value.trim().toLowerCase();
         const id = index[name];
-        if (!id) return;
-        currentNode = id;
-        if (visNodes.get(id)) {
-            showConnections(id);
-            network.focus(id, { scale: 3, animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
-        }
+        if(!id) return;
+        selectPlayer(id);
     });
 
-    network.on("selectNode", params => { currentNode=params.nodes[0]; searchInput.value=visNodes.get(currentNode).label; showConnections(currentNode); });
-    network.on("deselectNode", ()=>{ currentNode=null; connectionLists.classList.add("hidden"); });
+    // 9️⃣ Node selection
+    network.on("selectNode", params=>{
+        if(minConnectionDistance[currentDistanceModeIndex]!==Infinity){
+            selectPlayer(params.nodes[0]);
+        } else {
+            currentNode=params.nodes[0];
+            searchInput.value = visNodes.get(currentNode)?.label || currentNode;
+            showConnections(currentNode);
+        }
+    });
+    network.on("deselectNode",()=>{ currentNode=null; connectionLists.classList.add("hidden"); });
 
-    // 14️⃣ Toggle gray edges
-    document.getElementById("toggle-gray").addEventListener("click", async () => {
-        grayVisible = !grayVisible;
-        document.getElementById("toggle-gray").textContent = grayVisible ? "->" : "<-->";
+    // 10️⃣ Toggle gray edges
+    document.getElementById("toggle-gray").addEventListener("click",async ()=>{
+        grayVisible=!grayVisible;
+        document.getElementById("toggle-gray").textContent = grayVisible?"->":"<-->";
         await rebuildNetwork();
     });
 
-    // 15️⃣ Toggle min connection weight
-    document.getElementById("toggle-weight").addEventListener("click", async () => {
-        currentWeightModeIndex = (currentWeightModeIndex + 1) % minConnectionWeights.length;
-        const symbols = ["I","III","V","X","XXV"];
+    // 11️⃣ Toggle min weight
+    document.getElementById("toggle-weight").addEventListener("click",async ()=>{
+        currentWeightModeIndex = (currentWeightModeIndex+1)%minConnectionWeights.length;
+        const symbols=["I","III","V","X","XXV"];
         document.getElementById("toggle-weight").textContent = symbols[currentWeightModeIndex];
         await rebuildNetwork();
     });
 
-    // 16️⃣ Status update
+    // 12️⃣ Status
     function updateStatus(){
         const visibleNodes = visNodes.get().length;
         const visibleEdges = visEdges.get({filter:e=>!e.hidden}).length;
         statusText.textContent=`Players: ${visibleNodes} | Connections: ${visibleEdges}`;
     }
-    updateStatus();
 
+    // Initial build
+    await buildNetworkProgressively(nodes, mergedEdges);
 });
 </script>
+
 
 
 
