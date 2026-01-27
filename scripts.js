@@ -6,6 +6,7 @@ let rebuildTimer = null;
 let cooldownStart = null;
 let cooldownRAF = null;
 let rebuildPending = false;
+let lookalikesCache = null;
 
 let panelMode = "connections";
 
@@ -67,8 +68,43 @@ showAllCheckbox.addEventListener("change", () => {
     window.location.href = newUrl.toString();
 });
 
+const tooltip = document.createElement("div");
+tooltip.className = "tooltip";
+document.body.appendChild(tooltip);
 
-fetch("./graph_optimized.json").then(r => r.json()).then(async data => {
+function attachTooltip(el, text) {
+    el.addEventListener("mouseenter", e => {
+        tooltip.textContent = text;
+        tooltip.style.opacity = "1";
+    });
+    el.addEventListener("mousemove", e => {
+        tooltip.style.left = e.clientX + 12 + "px";
+        tooltip.style.top = e.clientY + 12 + "px";
+    });
+    el.addEventListener("mouseleave", () => {
+        tooltip.style.opacity = "0";
+    });
+}
+
+attachTooltip(toggleDistanceBtn,
+    "Limit graph to players within N connection hops of the selected player");
+
+attachTooltip(document.getElementById("toggle-weight"),
+    "Hide connections with fewer total mentions");
+
+attachTooltip(document.getElementById("toggle-gray"),
+    "Toggle non-mutual (one-way) connections");
+
+attachTooltip(togglePanelBtn,
+    "Switch between connection list and detailed profile");
+
+attachTooltip(showAllCheckbox,
+    "Include isolated players with no connections");
+
+
+
+
+fetch("./data/graph_optimized.json").then(r => r.json()).then(async data => {
 
     nodesMap = new Map();
     data.nodes.forEach(n => { 
@@ -254,7 +290,7 @@ fetch("./graph_optimized.json").then(r => r.json()).then(async data => {
         const profile = document.getElementById("profile-content");
         profile.innerHTML = `<div style="text-align:center;">Loading details...</div>`;
         try {
-            const response = await fetch("./graph.json");
+            const response = await fetch("./data/graph.json");
             const data = await response.json();
             const detailedNode = data.nodes.find(n => n.uuid === nodeId);
             const edgesForNode = data.edges.filter(e => e.from_user_id === nodeId || e.to_user_id === nodeId);
@@ -294,13 +330,51 @@ fetch("./graph_optimized.json").then(r => r.json()).then(async data => {
                 <div><b>K/D:</b> ${detailedNode ? ((detailedNode.total_kills || 0)/(detailedNode.total_deaths||1)).toFixed(2) : "N/A"}</div>
                 <div><b>Messages:</b> ${detailedNode?.total_messages ?? 0}</div>
                 <div><b>Flagged:</b> ${detailedNode?.flagged_count ?? 0}</div>
+                <hr>
                 <div><b>Top Connections:</b><br>${topConnections.join("<br>") || "None"}</div>
+                <hr>
+                <div id="lookalikes-section"></div>
             `;
+            renderLookalikes(nodeId);
         } catch (err) {
             profile.innerHTML = `<div style="color:red;">Failed to load profile details</div>`;
             console.error(err);
         }
     }
+
+    async function renderLookalikes(nodeId) {
+        const section = document.getElementById("lookalikes-section");
+        section.innerHTML = `<b>Lookalikes</b><br><i style="color:gray;">Loading...</i>`;
+        try {
+            if (!lookalikesCache) {
+                const res = await fetch("./data/lookalikes.json");
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                lookalikesCache = await res.json();
+            }
+            const list = lookalikesCache[nodeId];
+            if (!list || !list.length) {
+                section.innerHTML = `<b>Lookalikes</b><br><i style="color:gray;">None found</i>`;
+                return;
+            }
+            section.innerHTML =
+                `<b>Lookalikes</b><br>` +
+                list.slice(0, 5).map(l => `
+                    <div class="connection-item lookalike-item" data-id="${l.uuid}">
+                        ${l.username}
+                        <span style="color:gray;">(${l.similarity.toFixed(1)}%)</span>
+                    </div>
+                `).join("");
+            section.querySelectorAll(".lookalike-item").forEach(el => {
+                el.addEventListener("click", () => selectPlayer(el.dataset.id));
+            });
+        } catch (e) {
+            section.innerHTML =
+                `<b>Lookalikes</b><br><span style="color:red;">Failed to load: ${e}</span>`;
+            console.error("Failed to fetch lookalikes.json:", e);
+        }
+    }
+
+
 
     function filterNodesByDistance(anchorId, maxDist) {
         if (!anchorId || maxDist === Infinity) return { nodes: nodes, edges: mergedEdges };
