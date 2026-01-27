@@ -272,8 +272,6 @@ fetch("./data/graph_optimized.json").then(r => r.json()).then(async data => {
     }
 
 
-
-
     function showConnections(nodeId){
         connectionLists.classList.remove("hidden");
         const edges = visEdges.get({filter:e=>e.from===nodeId||e.to===nodeId});
@@ -329,7 +327,6 @@ fetch("./data/graph_optimized.json").then(r => r.json()).then(async data => {
                 <div><b>Deaths:</b> ${detailedNode?.total_deaths ?? 0}</div>
                 <div><b>K/D:</b> ${detailedNode ? ((detailedNode.total_kills || 0)/(detailedNode.total_deaths||1)).toFixed(2) : "N/A"}</div>
                 <div><b>Messages:</b> ${detailedNode?.total_messages ?? 0}</div>
-                <div><b>Flagged:</b> ${detailedNode?.flagged_count ?? 0}</div>
                 <hr>
                 <div><b>Top Connections:</b><br>${topConnections.join("<br>") || "None"}</div>
                 <hr>
