@@ -1,12 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>InnitNet</title>
-<link rel="icon" href="https://minecraft.wiki/images/Invicon_Cobweb.png?cb28b" type="image/png">
-
-<style>
-/* Fonts */
 @font-face {
     font-family: 'Minecraft';
     src: url('./fonts/Minecraft.otf') format('opentype');
@@ -21,15 +12,12 @@
     font-style: normal;
 }
 
-/* Optional: apply globally */
 body, * {
     font-family: 'Minecraft', monospace !important;
 }
 
-/* Reset body/html */
 html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; }
 
-/* Loading overlay */
 #loading-overlay {
     position: fixed; width:80%; height:100%;  left: 20.6%; bottom: 31px;
     background: transparent;          /* remove gray background */
@@ -38,7 +26,6 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
     pointer-events: none;
 }
 
-/* Optional: add subtle text shadow to keep text readable */
 #loading-text {
     color: white; 
     font-size: 32px; 
@@ -47,9 +34,6 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
     text-shadow: 1px 1px 3px rgba(0,0,0,0.7);
 }
 
-
-
-/* Left panel */
 #left-panel {
     position:absolute; z-index:10;
     background:#1E1E1E;
@@ -58,7 +42,6 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
     border-bottom: 1px solid #555;
 }
 
-/* Top buttons container */
 #top-buttons {
     display: flex;
     justify-content: space-around;
@@ -83,7 +66,6 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
     transform: scale(1.05);
 }
 
-/* Search box */
 #search {
     width: 90%;
     height: 32px;
@@ -103,7 +85,6 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
     box-shadow: 0 0 5px #555 inset;
 }
 
-/* Connection lists container */
 #connection-lists {
     margin-left: 0;
     margin-right: 0;
@@ -115,19 +96,27 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
     padding-right: 5px;
 }
 
-/* Scrollbars */
 #connection-lists {
     height: 78%;
     overflow-y: auto;
     scrollbar-width: thin; 
     scrollbar-color: #555 #222; /* thumb / track */
 }
-#connection-lists::-webkit-scrollbar { width: 10px; }
-#connection-lists::-webkit-scrollbar-track { background: #222; }
-#connection-lists::-webkit-scrollbar-thumb { background: #555; border-radius: 5px; }
-#connection-lists::-webkit-scrollbar-thumb:hover { background: #777; }
+#connection-lists::-webkit-scrollbar {
+    width: 10px;
+}
 
-/* Connection items */
+#connection-lists::-webkit-scrollbar-track {
+    background: #222;
+}
+
+#connection-lists::-webkit-scrollbar-thumb {
+    background: #555; border-radius: 5px;
+}
+#connection-lists::-webkit-scrollbar-thumb:hover {
+    background: #777;
+}
+
 .connection-item {
     margin-bottom:4px;
     padding: 2px 4px;
@@ -150,16 +139,14 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
   padding-right: 5px;
 }
 
-/* Network container */
 #network {
     width:80%; height:100%;  margin-left: 20%;
 }
 
-#toggle-weight {
+#toggle-weight, #toggle-gray, #toggle-panel, #toggle-distance {
     font-size: 20px;
 }
 
-/* Status bar */
 #status-bar {
     position: fixed; bottom: 0; left: 0; width: 100%; 
     background: #333333; color: #FFFFFF;
@@ -168,58 +155,33 @@ html, body { margin:0; padding:0; height:100%; background:#1E1E1E; color:white; 
     align-items: center; padding: 6px 12px; z-index: 20;
 }
 
-/* Headline styles */
 .headline{
     font-size:16px; 
     margin-bottom: 8px;
     color: #569CD6;
     padding-left: 5%;
 }
+#cooldown-container {
+    width: 92%;
+    height: 6px;
+    margin: 6px auto 12px auto;
+    background: #2a2a2a;
+    border: 1px solid #555;
+    border-radius: 3px;
+    overflow: hidden;
+}
 
-.hidden { display: none; }
-</style>
+#cooldown-bar {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(
+        90deg,
+        rgb(102,178,255),
+        rgb(0,255,0)
+    );
+    transition: width 0.1s linear;
+}
 
-<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-</head>
-<body>
-
-<div id="loading-overlay">
-  <div id="loading-text">loading...</div>
-</div>
-
-<div id="left-panel">
-  <div id="top-buttons">
-    <button class="top-btn" id="toggle-panel">=</button>
-    <button class="top-btn" id="toggle-gray">-></button>
-    <button class="top-btn" id="toggle-weight">V</button>
-    <button class="top-btn" id="toggle-distance">A</button>
-    <button class="top-btn"></button>
-  </div>
-    <div id="cooldown-container">
-    <div id="cooldown-bar"></div>
-    </div>
-  <input id="search" placeholder="Search player..." />
-  <div id="connection-lists" class="hidden">
-    <div id="mutual-section" class="headline">Mutual Connections:</div>
-    <div id="nonmutual-section" class="headline" style="margin-top:6px;">Non-Mutual Connections:</div>
-  </div>
-  <div id="profile-viewer" class="hidden">
-    <div class="headline">Profile</div>
-        <div id="profile-content" style="padding-left:5%; color:#ccc;">
-            Select a player to view profile information.
-        </div>
-  </div>
-</div>
-
-<div id="status-bar">
-  <div id="status-text">Players: 0 | Connections: 0</div>
-  <label style="display:flex; align-items:center; cursor:pointer; margin-right:18px;">
-    <input type="checkbox" id="show-all-players" style="margin-right:6px;" /> Show all players
-  </label>
-</div>
-
-<div id="network"></div>
-
-<script src="scripts.js"></script>
-</body>
-</html>
+.hidden {
+    display: none;
+}
