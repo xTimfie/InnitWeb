@@ -51,7 +51,7 @@ const PHYSICS_SLOW = {
 };
 
 let grayVisible = true;
-const minConnectionWeights = [1, 3, 5, 10, 25];
+const minConnectionWeights = [1, 3, 5, 10, 20];
 let currentWeightModeIndex = 2;
 const minConnectionDistance = [Infinity, 1, 2, 3, 5];
 let currentDistanceModeIndex = 0;
@@ -468,7 +468,7 @@ fetch("./data/graph_optimized.json").then(r => r.json()).then(async data => {
 
     document.getElementById("toggle-weight").addEventListener("click",async ()=>{
         currentWeightModeIndex = (currentWeightModeIndex+1)%minConnectionWeights.length;
-        const symbols=["I","III","V","X","XXV"];
+        const symbols=["I","III","V","X","XX"];
         document.getElementById("toggle-weight").textContent = symbols[currentWeightModeIndex];
         await scheduleRebuild();
     });
