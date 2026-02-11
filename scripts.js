@@ -376,7 +376,7 @@ fetch("./data/graph_optimized.json").then(r => r.json()).then(async data => {
             profile.innerHTML = `
                 <div style="text-align:center; margin-bottom:12px;">
                     <img
-                        src="${skinUrl(node.id)}"
+                        src="https://mc-heads.net/body/${encodeURIComponent(node.label)}"
                         onerror="this.onerror=null;this.src='${DEFAULT_SKIN_PATH}';"
                         style="width:120px; image-rendering:pixelated;"
                     />
