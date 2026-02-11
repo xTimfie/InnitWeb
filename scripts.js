@@ -138,7 +138,65 @@ fetch("./data/graph_optimized.json").then(r => r.json()).then(async data => {
     mergedEdges.forEach(e => { nodeDegrees[e.s]=(nodeDegrees[e.s]||0)+1; nodeDegrees[e.t]=(nodeDegrees[e.t]||0)+1; });
     visNodes = new vis.DataSet([]);
     visEdges = new vis.DataSet([]);
-    const placeholderImage = "https://mc-heads.net/avatar/null";
+    const DEFAULT_SKIN_PATH = "./data/skins/.default/steve_1.png";
+    const faceCache = new Map();
+    let defaultFaceDataUrl = null;
+
+    function skinUrl(uuid) {
+        return `./data/skins/${uuid}.png`;
+    }
+
+    function loadImage(url) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
+            img.src = url;
+        });
+    }
+
+    function faceDataUrlFromSkinImage(img) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = false;
+
+        // Minecraft skin layout (64x64):
+        // Base head/face: (8,8) size 8x8
+        // Hat/overlay:    (40,8) size 8x8
+        ctx.clearRect(0, 0, 64, 64);
+        ctx.drawImage(img, 8, 8, 8, 8, 0, 0, 64, 64);
+        ctx.drawImage(img, 40, 8, 8, 8, 0, 0, 64, 64);
+        return canvas.toDataURL("image/png");
+    }
+
+    async function ensureDefaultFace() {
+        if (defaultFaceDataUrl) return defaultFaceDataUrl;
+        try {
+            const img = await loadImage(DEFAULT_SKIN_PATH);
+            defaultFaceDataUrl = faceDataUrlFromSkinImage(img);
+        } catch {
+            // Tiny transparent PNG as a last-resort fallback
+            defaultFaceDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5G9eQAAAAASUVORK5CYII=";
+        }
+        return defaultFaceDataUrl;
+    }
+
+    function getFaceDataUrl(uuid) {
+        if (faceCache.has(uuid)) return faceCache.get(uuid);
+        const promise = (async () => {
+            const fallback = await ensureDefaultFace();
+            try {
+                const img = await loadImage(skinUrl(uuid));
+                return faceDataUrlFromSkinImage(img);
+            } catch {
+                return fallback;
+            }
+        })();
+        faceCache.set(uuid, promise);
+        return promise;
+    }
 
     function interpolateColor(fraction, minColor, maxColor) {
         fraction = Math.max(0, Math.min(1, fraction));
@@ -160,6 +218,7 @@ fetch("./data/graph_optimized.json").then(r => r.json()).then(async data => {
     });
 
     async function buildNetworkProgressively(nodesArr, edgesArr) {
+        const placeholderFace = await ensureDefaultFace();
         let overlayHidden = false;
         const minWeight = minConnectionWeights[currentWeightModeIndex];
         const filteredEdges = edgesArr.filter(e => (e.mutual || grayVisible) && (e.w1 + e.w2) >= minWeight);
@@ -172,7 +231,8 @@ fetch("./data/graph_optimized.json").then(r => r.json()).then(async data => {
         for (let i=0;i<filteredNodes.length;i+=nodeBatchSize){
             const batch = filteredNodes.slice(i,i+nodeBatchSize);
             const nodeItems = batch.map(n=>({
-                id: n.id, label: n.label, shape:'circularImage', image: placeholderImage,
+                id: n.id, label: n.label, shape:'circularImage', image: placeholderFace,
+                brokenImage: placeholderFace,
                 font:{ face:'Minecraft', size:14, color:"#FFF" }, value:10, shadow:false
             }));
             visNodes.add(nodeItems);
@@ -209,12 +269,15 @@ fetch("./data/graph_optimized.json").then(r => r.json()).then(async data => {
     }
 
     async function setAvatars(nodesArr) {
+        const placeholderFace = await ensureDefaultFace();
         const BATCH_SIZE = 20;
         for (let i = 0; i < nodesArr.length; i += BATCH_SIZE) {
-            const batch = nodesArr.slice(i, i + BATCH_SIZE).map(n => ({
+            const slice = nodesArr.slice(i, i + BATCH_SIZE);
+            const batch = await Promise.all(slice.map(async n => ({
                 id: n.id,
-                image: `https://mc-heads.net/avatar/${n.label}`
-            }));
+                image: await getFaceDataUrl(n.id),
+                brokenImage: placeholderFace
+            })));
             visNodes.update(batch);
             await new Promise(r => setTimeout(r, 0));
         }
@@ -313,7 +376,8 @@ fetch("./data/graph_optimized.json").then(r => r.json()).then(async data => {
             profile.innerHTML = `
                 <div style="text-align:center; margin-bottom:12px;">
                     <img
-                        src="https://mc-heads.net/body/${node.label}"
+                        src="${skinUrl(node.id)}"
+                        onerror="this.onerror=null;this.src='${DEFAULT_SKIN_PATH}';"
                         style="width:120px; image-rendering:pixelated;"
                     />
                 </div>

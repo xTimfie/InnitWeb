@@ -1,0 +1,40 @@
+name: Optimize Graph
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'data/graph.json'
+
+permissions:
+  contents: write
+
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Optimize graph
+        run: python tools/optimize_graph.py
+
+      - name: Commit and push if changed
+        run: |
+          if git diff --quiet -- data/graph_optimized.json; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add data/graph_optimized.json
+          git commit -m "Update data/graph_optimized.json"
+          git push
