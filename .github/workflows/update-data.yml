@@ -1,0 +1,55 @@
+name: Update Data Manually
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Ensure latest main
+        run: git pull --ff-only
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pillow numpy
+
+      - name: Optimize graph
+        run: python tools/optimize_graph.py
+
+      - name: Fetch skins (connected players only)
+        run: python tools/fetch_skins.py
+
+      - name: Generate lookalikes
+        run: python tools/generate_lookalikes.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A data/graph_optimized.json data/skins data/lookalikes.json
+
+          if git diff --cached --quiet; then
+            echo "No data changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Update data outputs"
+          git push
