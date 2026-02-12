@@ -37,3 +37,4 @@ The left panel can also switch into a profile viewer that shows:
 
 ## Credits
 - Graph rendering: `vis-network` (loaded from `https://unpkg.com/`).
+- Minecraft avatars: `mc-heads.net`.
